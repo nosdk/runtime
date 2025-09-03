@@ -1,0 +1,6 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+AllowAllParametersOfDeclarationOnNextLine: true
+AlignAfterOpenBracket: AlwaysBreak
+InsertTrailingCommas: None
+BinPackParameters: false
