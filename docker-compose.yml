@@ -1,0 +1,31 @@
+name: redpanda-minimal-dev
+networks:
+  redpanda_network:
+    driver: bridge
+services:
+  redpanda-0:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.2 # Use a specific, recent Redpanda version
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda-0:9092,external://localhost:19092
+      - --pandaproxy-addr
+      - internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --node-id
+      - '0'
+      - --mode dev-container
+    networks:
+      - redpanda_network
+    ports:
+      - '19092:19092' # Kafka API for external clients
+      - '18082:18082' # HTTP Proxy for external clients
+    volumes:
+      - redpanda-0:/var/lib/redpanda/data
+volumes:
+  redpanda-0: null
+
