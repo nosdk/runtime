@@ -115,6 +115,7 @@ int main(int argc, char *argv[]) {
             printf("someone wants to read!\n");
             char *str = "hello";
             write(fds[0].fd, str, strlen(str));
+            close(fds[0].fd);
         }
     }
 
