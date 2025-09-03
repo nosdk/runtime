@@ -1,7 +1,11 @@
+#include <fcntl.h>
 #include <librdkafka/rdkafka.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 void kafka_conf_must_set(
     rd_kafka_conf_t *conf, const char *property, const char *envvar) {
@@ -17,7 +21,7 @@ void kafka_conf_must_set(
     }
 }
 
-int main(int argc, char *argv[]) {
+int nosdk_setup_consumer() {
     rd_kafka_t *rk;
     rd_kafka_conf_t *conf;
     rd_kafka_topic_partition_list_t *subscription;
@@ -74,6 +78,44 @@ int main(int argc, char *argv[]) {
         }
 
         rd_kafka_message_destroy(msg);
+    }
+
+    return 0;
+}
+
+int main(int argc, char *argv[]) {
+    if (mkfifo("topic.fifo", S_IRWXU) == -1) {
+        perror("fifo creation");
+        return 1;
+    }
+
+    int write_fd = open("topic.fifo", O_WRONLY);
+    if (write_fd == -1) {
+        perror("opening fifo");
+        return 1;
+    }
+    struct pollfd fds[1] = {0};
+    fds[0].fd = write_fd;
+    fds[0].events = POLLOUT;
+
+    while (1) {
+        int ready = poll(fds, 1, 1000);
+
+        if (ready == -1) {
+            perror("poll error");
+            break;
+        } else if (ready == 0) {
+            printf("nothing happened.\n");
+            continue;
+        }
+
+        printf("%d fds are ready\n", ready);
+
+        if (fds[0].revents & POLLOUT) {
+            printf("someone wants to read!\n");
+            char *str = "hello";
+            write(fds[0].fd, str, strlen(str));
+        }
     }
 
     return 0;
