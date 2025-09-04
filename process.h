@@ -10,6 +10,7 @@ struct nosdk_process {
     int stdout_fd;
     int stderr_fd;
     char *command;
+    char *root_dir;
 };
 
 struct nosdk_process_mgr {

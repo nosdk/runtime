@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +9,10 @@
 #include <unistd.h>
 
 #include "process.h"
+
+int should_run = 1;
+
+void nosdk_process_mgr_stop(int n) { should_run = 0; }
 
 int nosdk_process_mgr_add(struct nosdk_process_mgr *mgr, char *command) {
     if (mgr->num_procs >= MAX_PROCS) {
@@ -18,6 +23,19 @@ int nosdk_process_mgr_add(struct nosdk_process_mgr *mgr, char *command) {
     mgr->procs[mgr->num_procs].command = strdup(command);
     mgr->num_procs++;
     return 0;
+}
+
+void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
+    for (int i = 0; i < mgr->num_procs; i++) {
+        siginterrupt(mgr->procs[i].pid, 0);
+        waitpid(mgr->procs[i].pid, NULL, 0);
+        printf("removing %s\n", mgr->procs[i].root_dir);
+        if (rmdir(mgr->procs[i].root_dir) != 0) {
+            // TODO: cleanup will be a little complicated
+            perror("removing dir");
+        }
+        printf("stopped %d\n", mgr->procs[i].pid);
+    }
 }
 
 char *nosdk_process_mgr_mkenv(
@@ -76,8 +94,8 @@ int nosdk_process_start(
         return -1;
     }
 
-    char *root_dir = nosdk_process_mgr_mkenv(mgr, proc);
-    if (root_dir == NULL) {
+    proc->root_dir = nosdk_process_mgr_mkenv(mgr, proc);
+    if (proc->root_dir == NULL) {
         return -1;
     }
 
@@ -97,7 +115,7 @@ int nosdk_process_start(
         close(stdout_pipe[1]);
         close(stderr_pipe[1]);
 
-        chdir(root_dir);
+        chdir(proc->root_dir);
         execl("/bin/sh", "sh", "-c", proc->command, NULL);
         perror("execl");
         exit(1);
@@ -118,6 +136,8 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
         printf("no processes to run\n");
         exit(1);
     }
+
+    signal(SIGINT, nosdk_process_mgr_stop);
 
     for (int i = 0; i < mgr->num_procs; i++) {
         if (mgr->procs[i].pid == 0) {
@@ -142,7 +162,7 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
         fds[i + mgr->num_procs].events = POLLIN;
     }
 
-    while (1) {
+    while (should_run) {
         int ready = poll(fds, num_fds, -1);
 
         if (ready > 0) {
@@ -154,4 +174,6 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
             }
         }
     }
+
+    nosdk_process_mgr_destroy(mgr);
 }
