@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "kafka.c"
+#include "process.c"
 
 int num_kafkas = 0;
 struct nosdk_kafka kafkas[64] = {0};
@@ -17,16 +18,19 @@ void handle_interrupt(int sig) {
 }
 
 int main(int argc, char *argv[]) {
+    struct nosdk_process_mgr mgr = {0};
+
     signal(SIGINT, handle_interrupt);
 
     int c;
     static struct option long_options[] = {
         {"subscribe", required_argument, NULL, 's'},
         {"publish", required_argument, NULL, 'p'},
+        {"run", required_argument, NULL, 'c'},
         {0, 0, 0, 0},
     };
 
-    while ((c = getopt_long(argc, argv, "s:p:", long_options, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "s:p:c:", long_options, NULL)) != -1) {
 
         char *owned_arg = malloc(strlen(optarg));
         strcpy(owned_arg, optarg);
@@ -45,6 +49,9 @@ int main(int argc, char *argv[]) {
             kafkas[num_kafkas] = k;
             num_kafkas++;
             break;
+        case 'c':
+            nosdk_process_mgr_add(&mgr, optarg);
+            break;
         }
     }
 
@@ -56,6 +63,8 @@ int main(int argc, char *argv[]) {
 
         nosdk_kafka_start(&kafkas[i]);
     }
+
+    nosdk_process_mgr_start(&mgr);
 
     for (int i = 0; i < num_kafkas; i++) {
         nosdk_kafka_wait(&kafkas[i]);
