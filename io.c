@@ -5,6 +5,11 @@
 int nosdk_io_mgr_init(struct nosdk_io_mgr *mgr) { return 0; }
 
 int nosdk_io_mgr_add_kafka(struct nosdk_io_mgr *mgr, struct nosdk_kafka k) {
+    if (mgr->num_kafkas >= MAX_KAFKA) {
+        printf("kafka process limit has been reached\n");
+        return 1;
+    }
+
     int ret = nosdk_kafka_init(&k);
     if (ret != 0) {
         return ret;

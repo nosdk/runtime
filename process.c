@@ -1,3 +1,5 @@
+#include <dirent.h>
+#include <errno.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +20,51 @@ int nosdk_process_mgr_add(struct nosdk_process_mgr *mgr, char *command) {
     return 0;
 }
 
+char *nosdk_process_mgr_mkenv(
+    struct nosdk_process_mgr *mgr, struct nosdk_process *proc) {
+
+    DIR *dir;
+    struct dirent *entry;
+    char root_dir[] = "/tmp/nosdk-XXXXXX";
+    char cwd[PATH_MAX];
+    char src_path[PATH_MAX];
+    char dst_path[PATH_MAX];
+
+    if (mkdtemp(root_dir) == NULL) {
+        perror("creating temp dir");
+        return NULL;
+    }
+
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        perror("getcwd");
+        return NULL;
+    }
+
+    dir = opendir(cwd);
+    if (dir == NULL) {
+        perror("opendir");
+        return NULL;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        snprintf(src_path, PATH_MAX, "%s/%s", cwd, entry->d_name);
+        snprintf(dst_path, PATH_MAX, "%s/%s", root_dir, entry->d_name);
+
+        if (symlink(src_path, dst_path) == -1) {
+            fprintf(
+                stderr, "error creating symlink %s: %s\n", dst_path,
+                strerror(errno));
+            return NULL;
+        }
+    }
+
+    closedir(dir);
+    return strdup(root_dir);
+}
+
 int nosdk_process_start(
     struct nosdk_process_mgr *mgr, struct nosdk_process *proc) {
 
@@ -26,6 +73,11 @@ int nosdk_process_start(
 
     if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0) {
         perror("create pipe");
+        return -1;
+    }
+
+    char *root_dir = nosdk_process_mgr_mkenv(mgr, proc);
+    if (root_dir == NULL) {
         return -1;
     }
 
@@ -45,6 +97,7 @@ int nosdk_process_start(
         close(stdout_pipe[1]);
         close(stderr_pipe[1]);
 
+        chdir(root_dir);
         execl("/bin/sh", "sh", "-c", proc->command, NULL);
         perror("execl");
         exit(1);
