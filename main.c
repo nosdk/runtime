@@ -11,8 +11,7 @@ struct nosdk_kafka kafkas[64] = {0};
 
 void handle_interrupt(int sig) {
     for (int i = 0; i < num_kafkas; i++) {
-        printf("deleting %s\n", kafkas[i].topic);
-        remove(kafkas[i].topic);
+        nosdk_kafka_destroy(&kafkas[i]);
     }
     exit(0);
 }

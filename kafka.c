@@ -21,15 +21,47 @@ struct nosdk_kafka {
     char *topic;
 };
 
-int nosdk_ensure_fifo(char *path) {
+char *nosdk_kafka_fifo_path(struct nosdk_kafka *k) {
+    char *buf = malloc(256);
+    if (k->type == CONSUMER) {
+        snprintf(buf, 256, "sub/%s", k->topic);
+    } else if (k->type == PRODUCER) {
+        snprintf(buf, 256, "pub/%s", k->topic);
+    } else {
+        return NULL;
+    }
+    return buf;
+}
+
+int nosdk_kafka_mkfifo(struct nosdk_kafka *k) {
+    char *path = nosdk_kafka_fifo_path(k);
+
+    if (k->type == CONSUMER) {
+        mkdir("sub", 0700);
+    } else if (k->type == PRODUCER) {
+        mkdir("pub", 0700);
+    }
+
     struct stat st;
     if (stat(path, &st) == -1 && errno == ENOENT) {
+        printf("creating %s\n", path);
         if (mkfifo(path, S_IRWXU) < 0) {
             perror("fifo creation");
+            free(path);
             return -1;
         }
     }
+    free(path);
     return 0;
+}
+
+void nosdk_kafka_destroy(struct nosdk_kafka *k) {
+    char *path = nosdk_kafka_fifo_path(k);
+
+    printf("deleting %s\n", path);
+    remove(path);
+    free(path);
+    rd_kafka_destroy(k->rk);
 }
 
 void *nosdk_kafka_consumer_thread(void *arg) {
@@ -39,16 +71,14 @@ void *nosdk_kafka_consumer_thread(void *arg) {
     // ignore SIGPIPE so we can handle it
     signal(SIGPIPE, SIG_IGN);
 
-    struct stat st;
-    if (stat(consumer->topic, &st) == -1 && errno == ENOENT) {
-        if (mkfifo(consumer->topic, S_IRWXU) < 0) {
-            perror("fifo creation");
-            return NULL;
-        }
+    if (nosdk_kafka_mkfifo(consumer) < 0) {
+        return NULL;
     }
 
+    char *fifo_path = nosdk_kafka_fifo_path(consumer);
+
     while (1) {
-        int write_fd = open(consumer->topic, O_WRONLY);
+        int write_fd = open(fifo_path, O_WRONLY);
         if (write_fd < 0) {
             perror("opening fifo");
             break;
@@ -78,15 +108,17 @@ void *nosdk_kafka_producer_thread(void *arg) {
     struct nosdk_kafka *producer = (struct nosdk_kafka *)arg;
     printf("creating producer fifo: %s\n", producer->topic);
 
-    if (nosdk_ensure_fifo(producer->topic) < 0) {
+    if (nosdk_kafka_mkfifo(producer) < 0) {
         return NULL;
     }
 
     // kafka max message size is 1mb!
     char *msg_buf = malloc(1000 * 1000);
 
+    char *fifo_path = nosdk_kafka_fifo_path(producer);
+
     while (1) {
-        int read_fd = open(producer->topic, O_RDONLY);
+        int read_fd = open(fifo_path, O_RDONLY);
         if (read_fd < 0) {
             perror("opening fifo");
             break;
@@ -103,6 +135,7 @@ void *nosdk_kafka_producer_thread(void *arg) {
 
     rd_kafka_flush(producer->rk, 5000);
     free(msg_buf);
+    free(fifo_path);
     return NULL;
 }
 
