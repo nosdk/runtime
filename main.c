@@ -2,11 +2,11 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#include "kafka.c"
-#include "process.c"
+#include <string.h>
 
 #include "io.h"
+#include "kafka.h"
+#include "process.h"
 
 int num_kafkas = 0;
 struct nosdk_kafka kafkas[64] = {0};

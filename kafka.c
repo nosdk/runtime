@@ -9,17 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-enum nosdk_kafka_type {
-    PRODUCER,
-    CONSUMER,
-};
-
-struct nosdk_kafka {
-    enum nosdk_kafka_type type;
-    rd_kafka_t *rk;
-    pthread_t thread;
-    char *topic;
-};
+#include "kafka.h"
 
 char *nosdk_kafka_fifo_path(struct nosdk_kafka *k) {
     char *buf = malloc(256);

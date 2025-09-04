@@ -5,19 +5,7 @@
 #include <sys/poll.h>
 #include <unistd.h>
 
-#define MAX_PROCS 100
-
-struct nosdk_process {
-    pid_t pid;
-    int stdout_fd;
-    int stderr_fd;
-    char *command;
-};
-
-struct nosdk_process_mgr {
-    struct nosdk_process procs[MAX_PROCS];
-    int num_procs;
-};
+#include "process.h"
 
 int nosdk_process_mgr_add(struct nosdk_process_mgr *mgr, char *command) {
     if (mgr->num_procs >= MAX_PROCS) {
