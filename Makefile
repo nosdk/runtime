@@ -4,5 +4,5 @@ all: bin bin/nosdk
 bin:
 	mkdir bin
 
-bin/nosdk: main.c
+bin/nosdk: main.c kafka.c
 	cc -o bin/nosdk -I/opt/homebrew/include -L/opt/homebrew/lib main.c -lrdkafka
