@@ -5,4 +5,4 @@ bin:
 	mkdir bin
 
 bin/nosdk: main.c kafka.c
-	cc -o bin/nosdk -I/opt/homebrew/include -L/opt/homebrew/lib main.c -lrdkafka
+	cc -o bin/nosdk -I/opt/homebrew/include -L/opt/homebrew/lib -Wall main.c -lrdkafka
