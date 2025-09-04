@@ -5,18 +5,7 @@
 #include <string.h>
 
 #include "io.h"
-#include "kafka.h"
 #include "process.h"
-
-int num_kafkas = 0;
-struct nosdk_kafka kafkas[64] = {0};
-
-void handle_interrupt(int sig) {
-    for (int i = 0; i < num_kafkas; i++) {
-        nosdk_kafka_destroy(&kafkas[i]);
-    }
-    exit(0);
-}
 
 int main(int argc, char *argv[]) {
     struct nosdk_process_mgr mgr = {0};
@@ -25,8 +14,6 @@ int main(int argc, char *argv[]) {
     if (nosdk_io_mgr_init(&io_mgr) != 0) {
         return 1;
     }
-
-    signal(SIGINT, handle_interrupt);
 
     int c;
     static struct option long_options[] = {
@@ -40,20 +27,17 @@ int main(int argc, char *argv[]) {
 
         char *owned_arg = malloc(strlen(optarg));
         strcpy(owned_arg, optarg);
-        struct nosdk_kafka k = {0};
 
         switch (c) {
         case 's':
-            k.type = CONSUMER;
-            k.topic = owned_arg;
-            kafkas[num_kafkas] = k;
-            num_kafkas++;
+            if (nosdk_io_mgr_kafka_subscribe(&io_mgr, optarg) != 0) {
+                return 1;
+            }
             break;
         case 'p':
-            k.type = PRODUCER;
-            k.topic = owned_arg;
-            kafkas[num_kafkas] = k;
-            num_kafkas++;
+            if (nosdk_io_mgr_kafka_produce(&io_mgr, optarg) != 0) {
+                return 1;
+            }
             break;
         case 'c':
             nosdk_process_mgr_add(&mgr, optarg);
@@ -61,20 +45,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    for (int i = 0; i < num_kafkas; i++) {
-        int ret = nosdk_kafka_init(&kafkas[i]);
-        if (ret != 0) {
-            return ret;
-        }
-
-        nosdk_kafka_start(&kafkas[i]);
-    }
+    nosdk_io_mgr_start(&io_mgr);
 
     nosdk_process_mgr_start(&mgr);
-
-    for (int i = 0; i < num_kafkas; i++) {
-        nosdk_kafka_wait(&kafkas[i]);
-    }
 
     return 0;
 }
