@@ -6,6 +6,8 @@
 #include "kafka.c"
 #include "process.c"
 
+#include "io.h"
+
 int num_kafkas = 0;
 struct nosdk_kafka kafkas[64] = {0};
 
@@ -18,6 +20,11 @@ void handle_interrupt(int sig) {
 
 int main(int argc, char *argv[]) {
     struct nosdk_process_mgr mgr = {0};
+
+    struct nosdk_io_mgr io_mgr = {0};
+    if (nosdk_io_mgr_init(&io_mgr) != 0) {
+        return 1;
+    }
 
     signal(SIGINT, handle_interrupt);
 

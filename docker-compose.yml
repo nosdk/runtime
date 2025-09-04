@@ -4,7 +4,7 @@ networks:
     driver: bridge
 services:
   redpanda-0:
-    image: docker.redpanda.com/redpandadata/redpanda:v24.1.2 # Use a specific, recent Redpanda version
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.2
     command:
       - redpanda
       - start
