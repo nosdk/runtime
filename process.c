@@ -30,10 +30,16 @@ void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
         siginterrupt(mgr->procs[i].pid, 0);
         waitpid(mgr->procs[i].pid, NULL, 0);
         printf("removing %s\n", mgr->procs[i].root_dir);
-        if (rmdir(mgr->procs[i].root_dir) != 0) {
-            // TODO: cleanup will be a little complicated
-            perror("removing dir");
+
+        // hacky, but does the right thing
+        pid_t pid = fork();
+        if (pid == 0) {
+            char *argv[] = {"rm", "-rf", mgr->procs[i].root_dir, NULL};
+            execvp("rm", argv);
+        } else {
+            waitpid(pid, NULL, 0);
         }
+
         printf("stopped %d\n", mgr->procs[i].pid);
     }
 }
