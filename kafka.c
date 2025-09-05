@@ -36,8 +36,8 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
         conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS");
     kafka_conf_must_set(conf, "group.id", "NOSDK_KAFKA_GROUP_ID");
 
-    rd_kafka_conf_set(
-        conf, "auto.offset.reset", "earliest", errstr, sizeof(errstr));
+    // rd_kafka_conf_set(conf, "auto.offset.reset", "earliest", errstr,
+    // sizeof(errstr));
     rd_kafka_conf_set(
         conf, "enable.auto.commit", "false", errstr, sizeof(errstr));
 

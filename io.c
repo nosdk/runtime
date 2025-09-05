@@ -136,14 +136,24 @@ void *nosdk_kafka_consumer_thread(void *arg) {
                 continue;
             }
 
+            if (msg->err != 0) {
+                const char *err = rd_kafka_err2str(msg->err);
+                printf("message %lli error: %s\n", msg->offset, err);
+                continue;
+            }
+
+            printf(
+                "writing message to fifo: %.*s\n", (int)msg->len,
+                (char *)msg->payload);
+
             ssize_t result = write(write_fd, msg->payload, msg->len);
             if (result > 0) {
                 rd_kafka_commit_message(ctx->k->rk, msg, 0);
             }
-            close(write_fd);
             rd_kafka_message_destroy(msg);
             break;
         }
+        close(write_fd);
     }
 
     return NULL;
@@ -164,21 +174,27 @@ void *nosdk_kafka_producer_thread(void *arg) {
 
     char *fifo_path = nosdk_kafka_fifo_path(ctx->k, ctx->root_dir);
 
-    while (1) {
-        int read_fd = open(fifo_path, O_RDONLY);
-        if (read_fd < 0) {
-            perror("opening fifo");
-            break;
-        }
+    int read_fd = open(fifo_path, O_RDONLY);
+    if (read_fd < 0) {
+        perror("opening fifo");
+        free(msg_buf);
+        free(fifo_path);
+        return NULL;
+    }
 
+    while (1) {
         ssize_t result = read(read_fd, msg_buf, 1000 * 1000);
+
+        if (result == 0) {
+            continue;
+        }
 
         rd_kafka_producev(
             ctx->k->rk, RD_KAFKA_V_TOPIC(ctx->k->topic),
             RD_KAFKA_V_VALUE(msg_buf, result), RD_KAFKA_V_END);
-
-        close(read_fd);
     }
+
+    close(read_fd);
 
     rd_kafka_flush(ctx->k->rk, 5000);
     free(msg_buf);
