@@ -1,6 +1,6 @@
 SOURCES = main.c io.c process.c kafka.c
 HEADERS = io.h kafka.h process.h
-CFLAGS = -Wall
+CFLAGS = -Wall -g
 LIBS = -lrdkafka
 
 # macOS homebrew flags

@@ -1,3 +1,4 @@
+#include <_string.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +8,8 @@
 #include "process.h"
 
 int main(int argc, char *argv[]) {
+    int nproc = 1;
+
     struct nosdk_process_mgr mgr = {0};
 
     struct nosdk_io_mgr io_mgr = {0};
@@ -14,37 +17,50 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    mgr.io_mgr = &io_mgr;
+
+    struct nosdk_process proc = {0};
+
+    struct nosdk_io_spec s = {0};
+
     int c;
     static struct option long_options[] = {
         {"subscribe", required_argument, NULL, 's'},
         {"publish", required_argument, NULL, 'p'},
         {"run", required_argument, NULL, 'c'},
+        {"nproc", required_argument, NULL, 'n'},
         {0, 0, 0, 0},
     };
 
-    while ((c = getopt_long(argc, argv, "s:p:c:", long_options, NULL)) != -1) {
-
-        char *owned_arg = malloc(strlen(optarg));
-        strcpy(owned_arg, optarg);
-
+    while ((c = getopt_long(argc, argv, "s:p:c:n:", long_options, NULL)) !=
+           -1) {
         switch (c) {
         case 's':
-            if (nosdk_io_mgr_kafka_subscribe(&io_mgr, optarg) != 0) {
-                return 1;
-            }
+            s.kind = KAFKA_CONSUME_TOPIC;
+            s.data = strdup(optarg);
+            nosdk_process_add_io(&proc, s);
             break;
         case 'p':
-            if (nosdk_io_mgr_kafka_produce(&io_mgr, optarg) != 0) {
-                return 1;
-            }
+            s.kind = KAFKA_PRODUCE_TOPIC;
+            s.data = strdup(optarg);
+            nosdk_process_add_io(&proc, s);
             break;
         case 'c':
-            nosdk_process_mgr_add(&mgr, optarg);
+            proc.command = strdup(optarg);
             break;
+        case 'n':
+            nproc = atoi(optarg);
         }
     }
 
-    nosdk_io_mgr_start(&io_mgr);
+    if (proc.command == NULL) {
+        printf("no command specified\n");
+        exit(1);
+    }
+
+    for (int i = 0; i < nproc; i++) {
+        nosdk_process_mgr_add(&mgr, proc);
+    }
 
     nosdk_process_mgr_start(&mgr);
 

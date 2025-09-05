@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/poll.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "process.h"
@@ -14,14 +15,16 @@ int should_run = 1;
 
 void nosdk_process_mgr_stop(int n) { should_run = 0; }
 
-int nosdk_process_mgr_add(struct nosdk_process_mgr *mgr, char *command) {
+int nosdk_process_mgr_add(
+    struct nosdk_process_mgr *mgr, struct nosdk_process proc) {
     if (mgr->num_procs >= MAX_PROCS) {
         fprintf(stderr, "too many processes\n");
         return -1;
     }
 
-    mgr->procs[mgr->num_procs].command = strdup(command);
+    mgr->procs[mgr->num_procs] = proc;
     mgr->num_procs++;
+
     return 0;
 }
 
@@ -85,6 +88,18 @@ char *nosdk_process_mgr_mkenv(
         }
     }
 
+    // create special directories
+    snprintf(dst_path, PATH_MAX, "%s/pub", root_dir);
+    if (mkdir(dst_path, 0755) < 0) {
+        perror("make pub dir");
+        return NULL;
+    }
+    snprintf(dst_path, PATH_MAX, "%s/sub", root_dir);
+    if (mkdir(dst_path, 0755) < 0) {
+        perror("make sub dir");
+        return NULL;
+    }
+
     closedir(dir);
     return strdup(root_dir);
 }
@@ -103,6 +118,10 @@ int nosdk_process_start(
     proc->root_dir = nosdk_process_mgr_mkenv(mgr, proc);
     if (proc->root_dir == NULL) {
         return -1;
+    }
+
+    for (int i = 0; i < proc->num_io; i++) {
+        nosdk_io_mgr_setup(mgr->io_mgr, proc->io[i], proc->root_dir);
     }
 
     pid_t pid = fork();
@@ -175,11 +194,27 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
             for (int i = 0; i < num_fds; i++) {
                 if (fds[i].revents & POLLIN) {
                     ssize_t result = read(fds[i].fd, buf, 1024);
-                    fprintf(stdout, "%.*s", (int)result, buf);
+                    if (result > 0) {
+                        if (i < mgr->num_procs) {
+                            fprintf(
+                                stdout, "[%d out] %.*s", i, (int)result, buf);
+                        } else {
+                            fprintf(
+                                stderr, "[%d err] %.*s", i - mgr->num_procs,
+                                (int)result, buf);
+                        }
+                    }
                 }
             }
         }
     }
 
     nosdk_process_mgr_destroy(mgr);
+}
+
+void nosdk_process_add_io(
+    struct nosdk_process *proc, struct nosdk_io_spec spec) {
+
+    proc->io[proc->num_io] = spec;
+    proc->num_io++;
 }
