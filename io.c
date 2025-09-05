@@ -132,7 +132,7 @@ void *nosdk_kafka_consumer_thread(void *arg) {
         while (1) {
             rd_kafka_message_t *msg = rd_kafka_consumer_poll(ctx->k->rk, 500);
 
-            if (!msg) {
+            if (!msg || msg->len == 0) {
                 continue;
             }
 
@@ -143,17 +143,29 @@ void *nosdk_kafka_consumer_thread(void *arg) {
             }
 
             printf(
-                "writing message to fifo: %.*s\n", (int)msg->len,
-                (char *)msg->payload);
+                "writing message %lli to fifo: %.*s\n", msg->offset,
+                (int)msg->len, (char *)msg->payload);
 
             ssize_t result = write(write_fd, msg->payload, msg->len);
             if (result > 0) {
-                rd_kafka_commit_message(ctx->k->rk, msg, 0);
+                rd_kafka_resp_err_t commit_err =
+                    rd_kafka_commit_message(ctx->k->rk, msg, 1);
+                if (commit_err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    printf(
+                        "✗ Commit failed: %s\n", rd_kafka_err2str(commit_err));
+                }
+                printf("closing consumer fifo\n");
+                fsync(write_fd);
+                usleep(1000);
+                close(write_fd);
             }
             rd_kafka_message_destroy(msg);
-            break;
+            if (result > 0) {
+                break;
+            } else {
+                printf("Wrote nothing?\n");
+            }
         }
-        close(write_fd);
     }
 
     return NULL;

@@ -30,20 +30,24 @@ int nosdk_process_mgr_add(
 
 void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
     for (int i = 0; i < mgr->num_procs; i++) {
-        siginterrupt(mgr->procs[i].pid, 0);
-        waitpid(mgr->procs[i].pid, NULL, 0);
-        printf("removing %s\n", mgr->procs[i].root_dir);
-
-        // hacky, but does the right thing
-        pid_t pid = fork();
-        if (pid == 0) {
-            char *argv[] = {"rm", "-rf", mgr->procs[i].root_dir, NULL};
-            execvp("rm", argv);
-        } else {
-            waitpid(pid, NULL, 0);
+        if (mgr->procs[i].pid != -1) {
+            siginterrupt(mgr->procs[i].pid, 0);
+            waitpid(mgr->procs[i].pid, NULL, 0);
+            printf("stopped %d\n", mgr->procs[i].pid);
         }
+        
+        if (mgr->procs[i].root_dir) {
+            printf("removing %s\n", mgr->procs[i].root_dir);
 
-        printf("stopped %d\n", mgr->procs[i].pid);
+            // hacky, but does the right thing
+            pid_t pid = fork();
+            if (pid == 0) {
+                char *argv[] = {"rm", "-rf", mgr->procs[i].root_dir, NULL};
+                execvp("rm", argv);
+            } else {
+                waitpid(pid, NULL, 0);
+            }
+        }
     }
 }
 
@@ -187,7 +191,9 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
         fds[i + mgr->num_procs].events = POLLIN;
     }
 
-    while (should_run) {
+    int active_procs = mgr->num_procs;
+    
+    while (should_run && active_procs > 0) {
         int ready = poll(fds, num_fds, -1);
 
         if (ready > 0) {
@@ -202,6 +208,27 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
                             fprintf(
                                 stderr, "[%d err] %.*s", i - mgr->num_procs,
                                 (int)result, buf);
+                        }
+                    }
+                }
+                
+                if (fds[i].revents & (POLLHUP | POLLERR)) {
+                    int proc_idx = i < mgr->num_procs ? i : i - mgr->num_procs;
+                    
+                    if (mgr->procs[proc_idx].pid != -1) {
+                        int status;
+                        pid_t result = waitpid(mgr->procs[proc_idx].pid, &status, WNOHANG);
+                        
+                        if (result > 0) {
+                            printf("process %d exited with status %d\n", 
+                                   mgr->procs[proc_idx].pid, WEXITSTATUS(status));
+                            mgr->procs[proc_idx].pid = -1;
+                            active_procs--;
+                            
+                            close(mgr->procs[proc_idx].stdout_fd);
+                            close(mgr->procs[proc_idx].stderr_fd);
+                            fds[proc_idx].fd = -1;
+                            fds[proc_idx + mgr->num_procs].fd = -1;
                         }
                     }
                 }
