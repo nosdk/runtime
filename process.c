@@ -35,7 +35,7 @@ void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
             waitpid(mgr->procs[i].pid, NULL, 0);
             printf("stopped %d\n", mgr->procs[i].pid);
         }
-        
+
         if (mgr->procs[i].root_dir) {
             printf("removing %s\n", mgr->procs[i].root_dir);
 
@@ -192,7 +192,7 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
     }
 
     int active_procs = mgr->num_procs;
-    
+
     while (should_run && active_procs > 0) {
         int ready = poll(fds, num_fds, -1);
 
@@ -211,20 +211,22 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
                         }
                     }
                 }
-                
+
                 if (fds[i].revents & (POLLHUP | POLLERR)) {
                     int proc_idx = i < mgr->num_procs ? i : i - mgr->num_procs;
-                    
+
                     if (mgr->procs[proc_idx].pid != -1) {
                         int status;
-                        pid_t result = waitpid(mgr->procs[proc_idx].pid, &status, WNOHANG);
-                        
+                        pid_t result =
+                            waitpid(mgr->procs[proc_idx].pid, &status, WNOHANG);
+
                         if (result > 0) {
-                            printf("process %d exited with status %d\n", 
-                                   mgr->procs[proc_idx].pid, WEXITSTATUS(status));
+                            printf(
+                                "process %d exited with status %d\n",
+                                mgr->procs[proc_idx].pid, WEXITSTATUS(status));
                             mgr->procs[proc_idx].pid = -1;
                             active_procs--;
-                            
+
                             close(mgr->procs[proc_idx].stdout_fd);
                             close(mgr->procs[proc_idx].stderr_fd);
                             fds[proc_idx].fd = -1;
