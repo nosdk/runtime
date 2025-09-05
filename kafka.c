@@ -36,10 +36,18 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
         conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS");
     kafka_conf_must_set(conf, "group.id", "NOSDK_KAFKA_GROUP_ID");
 
-    rd_kafka_conf_set(
-        conf, "auto.offset.reset", "earliest", errstr, sizeof(errstr));
-    rd_kafka_conf_set(
-        conf, "enable.auto.commit", "false", errstr, sizeof(errstr));
+    if (rd_kafka_conf_set(
+            conf, "auto.offset.reset", "earliest", errstr, sizeof(errstr)) !=
+        RD_KAFKA_CONF_OK) {
+
+        fprintf(stderr, "config error: %s\n", errstr);
+    }
+    if (rd_kafka_conf_set(
+            conf, "enable.auto.commit", "false", errstr, sizeof(errstr)) !=
+        RD_KAFKA_CONF_OK) {
+
+        fprintf(stderr, "config error: %s\n", errstr);
+    }
 
     consumer->rk =
         rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr, sizeof(errstr));
@@ -50,8 +58,17 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
 
     // subscribe to topics
     subscription = rd_kafka_topic_partition_list_new(1);
-    rd_kafka_topic_partition_list_add(
+    rd_kafka_topic_partition_t *partition = rd_kafka_topic_partition_list_add(
         subscription, consumer->topic, RD_KAFKA_PARTITION_UA);
+
+    if (partition->err) {
+        printf("subscription error: %s\n", rd_kafka_err2str(partition->err));
+        return -1;
+    }
+
+    printf(
+        "partition %d, offset is %lli\n", partition->partition,
+        partition->offset);
 
     rd_kafka_resp_err_t err = rd_kafka_subscribe(consumer->rk, subscription);
     if (err) {
