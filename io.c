@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <librdkafka/rdkafka.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -186,7 +187,7 @@ void *nosdk_kafka_producer_thread(void *arg) {
 
     char *fifo_path = nosdk_kafka_fifo_path(ctx->k, ctx->root_dir);
 
-    int read_fd = open(fifo_path, O_RDONLY);
+    int read_fd = open(fifo_path, O_RDONLY | O_NONBLOCK);
     if (read_fd < 0) {
         perror("opening fifo");
         free(msg_buf);
@@ -194,16 +195,37 @@ void *nosdk_kafka_producer_thread(void *arg) {
         return NULL;
     }
 
-    while (1) {
-        ssize_t result = read(read_fd, msg_buf, 1000 * 1000);
+    struct pollfd pfd[1] = {0};
+    pfd[0].fd = read_fd;
+    pfd[0].events = POLLIN | POLLHUP;
 
-        if (result == 0) {
+    while (1) {
+        int ready = poll(pfd, 1, -1);
+        printf("ready: %d\n", ready);
+
+        if (ready == -1) {
+            perror("poll error");
+            break;
+        } else if (ready == 0) {
             continue;
         }
 
-        rd_kafka_producev(
-            ctx->k->rk, RD_KAFKA_V_TOPIC(ctx->k->topic),
-            RD_KAFKA_V_VALUE(msg_buf, result), RD_KAFKA_V_END);
+        if (pfd[0].revents & POLLIN) {
+            ssize_t result = read(read_fd, msg_buf, 1000 * 1000);
+
+            printf("read %.*s\n", (int)result, msg_buf);
+
+            if (result == 0) {
+                continue;
+            }
+
+            rd_kafka_producev(
+                ctx->k->rk, RD_KAFKA_V_TOPIC(ctx->k->topic),
+                RD_KAFKA_V_VALUE(msg_buf, result), RD_KAFKA_V_END);
+        } else if (pfd[0].revents & POLLHUP || pfd[0].revents & POLLERR) {
+            printf("process hung up\n");
+            // this never happens...
+        }
     }
 
     close(read_fd);
