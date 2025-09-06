@@ -275,3 +275,9 @@ int nosdk_io_mgr_setup(
     nosdk_io_mgr_add_kafka_ctx(mgr, ctx);
     return 0;
 }
+
+void nosdk_io_mgr_teardown(struct nosdk_io_mgr *mgr) {
+    for (int i = 0; i < mgr->num_kafkas; i++) {
+        rd_kafka_destroy(mgr->kafkas[i].rk);
+    }
+}

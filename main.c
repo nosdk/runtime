@@ -28,18 +28,18 @@ int main(int argc, char *argv[]) {
 
     int c;
     static struct option long_options[] = {
-        {"subscribe", required_argument, NULL, 's'},
-        {"publish", required_argument, NULL, 'p'},
-        {"run", required_argument, NULL, 'c'},
+        {"produce", required_argument, NULL, 'p'},
+        {"consume", required_argument, NULL, 'c'},
+        {"run", required_argument, NULL, 'r'},
         {"nproc", required_argument, NULL, 'n'},
         {"debug", no_argument, NULL, 'd'},
         {0, 0, 0, 0},
     };
 
-    while ((c = getopt_long(argc, argv, "s:p:c:n:d", long_options, NULL)) !=
+    while ((c = getopt_long(argc, argv, "p:c:r:n:d", long_options, NULL)) !=
            -1) {
         switch (c) {
-        case 's':
+        case 'c':
             s.kind = KAFKA_CONSUME_TOPIC;
             s.data = strdup(optarg);
             nosdk_process_add_io(&proc, s);
@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
             s.data = strdup(optarg);
             nosdk_process_add_io(&proc, s);
             break;
-        case 'c':
+        case 'r':
             proc.command = strdup(optarg);
             break;
         case 'n':
@@ -71,6 +71,8 @@ int main(int argc, char *argv[]) {
     }
 
     nosdk_process_mgr_start(&mgr);
+
+    nosdk_io_mgr_teardown(&io_mgr);
 
     return 0;
 }

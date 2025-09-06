@@ -36,4 +36,6 @@ int nosdk_io_mgr_init(struct nosdk_io_mgr *mgr);
 int nosdk_io_mgr_setup(
     struct nosdk_io_mgr *mgr, struct nosdk_io_spec spec, char *root_dir);
 
+void nosdk_io_mgr_teardown(struct nosdk_io_mgr *mgr);
+
 #endif // _NOSDK_IO_H
