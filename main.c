@@ -6,6 +6,9 @@
 
 #include "io.h"
 #include "process.h"
+#include "util.h"
+
+int nosdk_debug_flag = 0;
 
 int main(int argc, char *argv[]) {
     int nproc = 1;
@@ -29,10 +32,11 @@ int main(int argc, char *argv[]) {
         {"publish", required_argument, NULL, 'p'},
         {"run", required_argument, NULL, 'c'},
         {"nproc", required_argument, NULL, 'n'},
+        {"debug", no_argument, NULL, 'd'},
         {0, 0, 0, 0},
     };
 
-    while ((c = getopt_long(argc, argv, "s:p:c:n:", long_options, NULL)) !=
+    while ((c = getopt_long(argc, argv, "s:p:c:n:d", long_options, NULL)) !=
            -1) {
         switch (c) {
         case 's':
@@ -50,6 +54,10 @@ int main(int argc, char *argv[]) {
             break;
         case 'n':
             nproc = atoi(optarg);
+            break;
+        case 'd':
+            nosdk_debug_flag = 1;
+            break;
         }
     }
 

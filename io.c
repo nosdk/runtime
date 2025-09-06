@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "io.h"
+#include "util.h"
 
 int nosdk_io_mgr_init(struct nosdk_io_mgr *mgr) { return 0; }
 
@@ -97,7 +98,7 @@ int nosdk_kafka_mkfifo(struct nosdk_kafka *k, char *root_dir) {
 
     struct stat st;
     if (stat(path, &st) == -1 && errno == ENOENT) {
-        printf("creating %s\n", path);
+        nosdk_debugf("creating %s\n", path);
         if (mkfifo(path, S_IRWXU) < 0) {
             perror("fifo creation");
             free(path);
@@ -110,7 +111,7 @@ int nosdk_kafka_mkfifo(struct nosdk_kafka *k, char *root_dir) {
 
 void *nosdk_kafka_consumer_thread(void *arg) {
     struct nosdk_kafka_thread_ctx *ctx = (struct nosdk_kafka_thread_ctx *)arg;
-    printf(
+    nosdk_debugf(
         "starting consumer thread for topic %s in %s\n", ctx->k->topic,
         ctx->root_dir);
 
@@ -130,43 +131,41 @@ void *nosdk_kafka_consumer_thread(void *arg) {
             break;
         }
 
-        while (1) {
-            rd_kafka_message_t *msg = rd_kafka_consumer_poll(ctx->k->rk, 500);
+        rd_kafka_message_t *msg;
+        int no_message = 1;
 
-            if (!msg || msg->len == 0) {
-                continue;
-            }
-
-            if (msg->err != 0) {
-                const char *err = rd_kafka_err2str(msg->err);
-                printf("message %lli error: %s\n", msg->offset, err);
-                continue;
-            }
-
-            printf(
-                "writing message %lli to fifo: %.*s\n", msg->offset,
-                (int)msg->len, (char *)msg->payload);
-
-            ssize_t result = write(write_fd, msg->payload, msg->len);
-            if (result > 0) {
-                rd_kafka_resp_err_t commit_err =
-                    rd_kafka_commit_message(ctx->k->rk, msg, 1);
-                if (commit_err != RD_KAFKA_RESP_ERR_NO_ERROR) {
-                    printf(
-                        "✗ Commit failed: %s\n", rd_kafka_err2str(commit_err));
-                }
-                printf("closing consumer fifo\n");
-                fsync(write_fd);
-                usleep(1000);
-                close(write_fd);
-            }
-            rd_kafka_message_destroy(msg);
-            if (result > 0) {
-                break;
-            } else {
-                printf("Wrote nothing?\n");
-            }
+        while (no_message) {
+            msg = rd_kafka_consumer_poll(ctx->k->rk, 500);
+            no_message = (msg == NULL);
         }
+
+        if (msg->err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+            printf("poll error: %s\n", rd_kafka_err2str(msg->err));
+            rd_kafka_message_destroy(msg);
+            close(write_fd);
+            continue;
+        }
+
+        // write message to pipe
+        int total_written = 0;
+
+        while (total_written < msg->len) {
+            ssize_t result = write(
+                write_fd, &msg->payload[total_written],
+                msg->len - total_written);
+            total_written += result;
+        }
+
+        fsync(write_fd);
+        close(write_fd);
+
+        // commit and destroy
+        rd_kafka_resp_err_t commit_err =
+            rd_kafka_commit_message(ctx->k->rk, msg, 1);
+        if (commit_err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+            printf("commit error: %s\n", rd_kafka_err2str(commit_err));
+        }
+        rd_kafka_message_destroy(msg);
     }
 
     return NULL;
@@ -174,7 +173,7 @@ void *nosdk_kafka_consumer_thread(void *arg) {
 
 void *nosdk_kafka_producer_thread(void *arg) {
     struct nosdk_kafka_thread_ctx *ctx = (struct nosdk_kafka_thread_ctx *)arg;
-    printf(
+    nosdk_debugf(
         "starting producer thread for topic %s in %s\n", ctx->k->topic,
         ctx->root_dir);
 
@@ -195,13 +194,16 @@ void *nosdk_kafka_producer_thread(void *arg) {
         return NULL;
     }
 
-    struct pollfd pfd[1] = {0};
-    pfd[0].fd = read_fd;
-    pfd[0].events = POLLIN | POLLHUP;
+    struct pollfd pfd[1] = {
+        {
+            .fd = read_fd,
+            .events = POLLIN | POLLHUP,
+        },
+    };
 
     while (1) {
         int ready = poll(pfd, 1, -1);
-        printf("ready: %d\n", ready);
+        nosdk_debugf("producer: %d poll fds are ready\n", ready);
 
         if (ready == -1) {
             perror("poll error");
@@ -213,7 +215,7 @@ void *nosdk_kafka_producer_thread(void *arg) {
         if (pfd[0].revents & POLLIN) {
             ssize_t result = read(read_fd, msg_buf, 1000 * 1000);
 
-            printf("read %.*s\n", (int)result, msg_buf);
+            nosdk_debugf("producer read data: %.*s\n", (int)result, msg_buf);
 
             if (result == 0) {
                 continue;
