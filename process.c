@@ -10,6 +10,9 @@
 #include <unistd.h>
 
 #include "process.h"
+#include "util.h"
+
+#define OUTPUT_BUF_SIZE 1024
 
 int should_run = 1;
 
@@ -20,6 +23,22 @@ int nosdk_process_mgr_add(
     if (mgr->num_procs >= MAX_PROCS) {
         fprintf(stderr, "too many processes\n");
         return -1;
+    }
+
+    if (proc.output_buf == NULL) {
+        proc.output_buf = malloc(OUTPUT_BUF_SIZE);
+    }
+
+    if (proc.name == NULL) {
+        // use the first word of command as the name
+        proc.name = strdup(proc.command);
+        int clen = strlen(proc.command);
+        for (int i = 0; i < clen; i++) {
+            if (proc.command[i] == ' ') {
+                proc.name[i] = '\0';
+                break;
+            }
+        }
     }
 
     mgr->procs[mgr->num_procs] = proc;
@@ -33,11 +52,11 @@ void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
         if (mgr->procs[i].pid != -1) {
             siginterrupt(mgr->procs[i].pid, 0);
             waitpid(mgr->procs[i].pid, NULL, 0);
-            printf("stopped %d\n", mgr->procs[i].pid);
+            nosdk_debugf("stopped %d\n", mgr->procs[i].pid);
         }
 
         if (mgr->procs[i].root_dir) {
-            printf("removing %s\n", mgr->procs[i].root_dir);
+            nosdk_debugf("removing %s\n", mgr->procs[i].root_dir);
 
             // hacky, but does the right thing
             pid_t pid = fork();
@@ -49,6 +68,7 @@ void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
             }
         }
     }
+    nosdk_debugf("process manager destroy finished\n");
 }
 
 char *nosdk_process_mgr_mkenv(
@@ -160,6 +180,34 @@ int nosdk_process_start(
     return 0;
 }
 
+void nosdk_process_mgr_print_output(
+    struct nosdk_process *proc, int fd, int is_stdout) {
+
+    ssize_t bytes_read = read(fd, proc->output_buf, OUTPUT_BUF_SIZE - 1);
+    if (bytes_read <= 0)
+        return;
+
+    int line_start = 0;
+    FILE *output = is_stdout ? stdout : stderr;
+
+    for (int i = 0; i < bytes_read; i++) {
+        if (proc->output_buf[i] == '\n') {
+            // Print complete line (excluding the newline)
+            fprintf(
+                output, "[%s] %.*s\n", proc->name, i - line_start,
+                &proc->output_buf[line_start]);
+            line_start = i + 1;
+        }
+    }
+
+    // Print any remaining partial line without newline
+    if (line_start < bytes_read) {
+        fprintf(
+            output, "[%s] %.*s", proc->name, (int)(bytes_read - line_start),
+            &proc->output_buf[line_start]);
+    }
+}
+
 void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
     if (mgr->num_procs == 0) {
         printf("no processes to run\n");
@@ -182,8 +230,6 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
     struct pollfd *fds = malloc(sizeof(struct pollfd) * num_fds);
     memset(fds, 0, sizeof(struct pollfd) * num_fds);
 
-    char *buf = malloc(1024);
-
     for (int i = 0; i < mgr->num_procs; i++) {
         fds[i].fd = mgr->procs[i].stdout_fd;
         fds[i].events = POLLIN;
@@ -198,22 +244,15 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
 
         if (ready > 0) {
             for (int i = 0; i < num_fds; i++) {
+                int proc_idx = i < mgr->num_procs ? i : i - mgr->num_procs;
+                int is_stdout = (i < mgr->num_procs);
+
                 if (fds[i].revents & POLLIN) {
-                    ssize_t result = read(fds[i].fd, buf, 1024);
-                    if (result > 0) {
-                        if (i < mgr->num_procs) {
-                            fprintf(
-                                stdout, "[%d out] %.*s", i, (int)result, buf);
-                        } else {
-                            fprintf(
-                                stderr, "[%d err] %.*s", i - mgr->num_procs,
-                                (int)result, buf);
-                        }
-                    }
+                    nosdk_process_mgr_print_output(
+                        &mgr->procs[proc_idx], fds[i].fd, is_stdout);
                 }
 
                 if (fds[i].revents & (POLLHUP | POLLERR)) {
-                    int proc_idx = i < mgr->num_procs ? i : i - mgr->num_procs;
 
                     if (mgr->procs[proc_idx].pid != -1) {
                         int status;

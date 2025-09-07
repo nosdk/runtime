@@ -37,7 +37,7 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
     kafka_conf_must_set(conf, "group.id", "NOSDK_KAFKA_GROUP_ID");
 
     if (rd_kafka_conf_set(
-            conf, "auto.offset.reset", "earliest", errstr, sizeof(errstr)) !=
+            conf, "auto.offset.reset", "latest", errstr, sizeof(errstr)) !=
         RD_KAFKA_CONF_OK) {
 
         fprintf(stderr, "config error: %s\n", errstr);

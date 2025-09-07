@@ -126,6 +126,8 @@ void *nosdk_kafka_consumer_thread(void *arg) {
     char *fifo_path = nosdk_kafka_fifo_path(ctx->k, ctx->root_dir);
 
     while (1) {
+        nosdk_debugf("%s: waiting for reader\n ", ctx->root_dir);
+
         int write_fd = open(fifo_path, O_WRONLY);
         if (write_fd < 0) {
             perror("opening fifo");
@@ -136,6 +138,9 @@ void *nosdk_kafka_consumer_thread(void *arg) {
         int no_message = 1;
 
         while (no_message) {
+            nosdk_debugf(
+                "%s: reading connected, polling %s\n", ctx->root_dir,
+                ctx->k->topic);
             msg = rd_kafka_consumer_poll(ctx->k->rk, 500);
             no_message = (msg == NULL);
         }
@@ -170,6 +175,8 @@ void *nosdk_kafka_consumer_thread(void *arg) {
             printf("commit error: %s\n", rd_kafka_err2str(commit_err));
         }
         rd_kafka_message_destroy(msg);
+
+        usleep(3000);
     }
 
     return NULL;
@@ -282,6 +289,7 @@ int nosdk_io_mgr_setup(
 
 void nosdk_io_mgr_teardown(struct nosdk_io_mgr *mgr) {
     for (int i = 0; i < mgr->num_kafkas; i++) {
+        nosdk_debugf("destroying kafka %s\n", mgr->kafkas[i].type);
         rd_kafka_destroy(mgr->kafkas[i].rk);
     }
 }

@@ -9,12 +9,14 @@
 #define MAX_IO 16
 
 struct nosdk_process {
+    char *name;
     char *command;
     char *root_dir;
 
     pid_t pid;
     int stdout_fd;
     int stderr_fd;
+    char *output_buf;
 
     // io
     struct nosdk_io_spec io[MAX_IO];
