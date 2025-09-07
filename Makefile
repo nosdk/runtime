@@ -1,7 +1,7 @@
-SOURCES = main.c io.c process.c kafka.c
-HEADERS = io.h kafka.h process.h
+SOURCES = main.c io.c process.c kafka.c config.c
+HEADERS = io.h kafka.h process.h config.h
 CFLAGS = -Wall -g
-LIBS = -lrdkafka
+LIBS = -lrdkafka -lcyaml
 
 # macOS homebrew flags
 ifeq ($(shell uname),Darwin)

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -155,6 +156,9 @@ void *nosdk_kafka_consumer_thread(void *arg) {
                 msg->len - total_written);
             total_written += result;
         }
+
+        // write headers
+        nosdk_kafka_write_headers(msg, fifo_path);
 
         fsync(write_fd);
         close(write_fd);

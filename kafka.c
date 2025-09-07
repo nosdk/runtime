@@ -108,3 +108,42 @@ int nosdk_kafka_init(struct nosdk_kafka *k) {
     }
     return -1;
 }
+
+int nosdk_kafka_write_headers(rd_kafka_message_t *msg, char *filepath) {
+    char headers_path[512];
+    snprintf(headers_path, sizeof(headers_path), "%s.headers", filepath);
+
+    int headers_fd = open(headers_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (headers_fd >= 0) {
+        dprintf(headers_fd, "{");
+
+        rd_kafka_headers_t *headers = rd_kafka_headers_new(10);
+        rd_kafka_message_headers(msg, &headers);
+        if (headers) {
+            size_t header_count = rd_kafka_header_cnt(headers);
+            for (size_t i = 0; i < header_count; i++) {
+                const char *name;
+                const void *value;
+                size_t value_size;
+
+                rd_kafka_header_get_all(headers, i, &name, &value, &value_size);
+                dprintf(
+                    headers_fd, "\"%s\":\"%.*s\",", name, (int)value_size,
+                    (char *)value);
+            }
+        }
+
+        // kafka metadata
+        if (msg->key) {
+            dprintf(
+                headers_fd, "\"_key\":\"%.*s\",", (int)msg->key_len,
+                (char *)msg->key);
+        }
+
+        dprintf(headers_fd, "\"_partition\":%d,\n", msg->partition);
+        dprintf(headers_fd, "\"_offset\":%lli}", msg->offset);
+        close(headers_fd);
+    }
+
+    return 0;
+}

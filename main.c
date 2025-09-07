@@ -4,11 +4,55 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "config.h"
 #include "io.h"
 #include "process.h"
 #include "util.h"
 
 int nosdk_debug_flag = 0;
+
+int config_main(char *path) {
+    struct nosdk_config *config = {0};
+    struct nosdk_process_mgr proc_mgr = {0};
+    struct nosdk_io_mgr io_mgr = {0};
+
+    if (nosdk_io_mgr_init(&io_mgr) != 0) {
+        return 1;
+    }
+
+    proc_mgr.io_mgr = &io_mgr;
+
+    if (nosdk_config_load(path, &config) != 0) {
+        return 1;
+    }
+
+    for (int i = 0; i < config->processes_count; i++) {
+        struct nosdk_process_config c = config->processes[i];
+        struct nosdk_process p = {0};
+
+        p.command = c.command;
+
+        for (int j = 0; j < c.consume_count; j++) {
+            struct nosdk_io_spec s = {
+                .kind = KAFKA_CONSUME_TOPIC,
+                .data = c.consume[i].topic,
+            };
+            nosdk_process_add_io(&p, s);
+        }
+
+        if (c.nproc == 0) {
+            nosdk_process_mgr_add(&proc_mgr, p);
+        } else {
+            for (int n = 0; n < c.nproc; n++) {
+                nosdk_process_mgr_add(&proc_mgr, p);
+            }
+        }
+    }
+
+    nosdk_process_mgr_start(&proc_mgr);
+
+    return 0;
+}
 
 int main(int argc, char *argv[]) {
     int nproc = 1;
@@ -33,10 +77,11 @@ int main(int argc, char *argv[]) {
         {"run", required_argument, NULL, 'r'},
         {"nproc", required_argument, NULL, 'n'},
         {"debug", no_argument, NULL, 'd'},
+        {"config", required_argument, NULL, 'f'},
         {0, 0, 0, 0},
     };
 
-    while ((c = getopt_long(argc, argv, "p:c:r:n:d", long_options, NULL)) !=
+    while ((c = getopt_long(argc, argv, "p:c:r:n:f:d", long_options, NULL)) !=
            -1) {
         switch (c) {
         case 'c':
@@ -58,6 +103,8 @@ int main(int argc, char *argv[]) {
         case 'd':
             nosdk_debug_flag = 1;
             break;
+        case 'f':
+            return config_main(optarg);
         }
     }
 

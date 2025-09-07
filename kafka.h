@@ -17,4 +17,7 @@ struct nosdk_kafka {
 
 int nosdk_kafka_init(struct nosdk_kafka *k);
 
+// write the message headers to a regular file at path <filepath>.headers
+int nosdk_kafka_write_headers(rd_kafka_message_t *msg, char *filepath);
+
 #endif // _NOSDK_KAFKA_H
