@@ -279,6 +279,9 @@ int nosdk_io_mgr_setup(
 
         ctx->k = nosdk_io_mgr_get_producer(mgr);
         pthread_create(&ctx->thread, NULL, nosdk_kafka_producer_thread, ctx);
+    } else if (spec.kind == POSTGRES) {
+        printf("postgres backend not implemented\n");
+        return -1;
     }
 
     if (ctx->k == NULL) {

@@ -104,9 +104,11 @@ char *nosdk_process_mgr_mkenv(
             continue;
 
         int src_len = snprintf(src_path, PATH_MAX, "%s/%s", cwd, entry->d_name);
-        int dst_len = snprintf(dst_path, PATH_MAX, "%s/%s", root_dir, entry->d_name);
+        int dst_len =
+            snprintf(dst_path, PATH_MAX, "%s/%s", root_dir, entry->d_name);
         if (src_len >= PATH_MAX || dst_len >= PATH_MAX) {
-            fprintf(stderr, "path too long: %s or %s\n", entry->d_name, root_dir);
+            fprintf(
+                stderr, "path too long: %s or %s\n", entry->d_name, root_dir);
             closedir(dir);
             return NULL;
         }
@@ -152,7 +154,10 @@ int nosdk_process_start(
     }
 
     for (int i = 0; i < proc->num_io; i++) {
-        nosdk_io_mgr_setup(mgr->io_mgr, proc->io[i], proc->root_dir);
+        int ret = nosdk_io_mgr_setup(mgr->io_mgr, proc->io[i], proc->root_dir);
+        if (ret == -1) {
+            return -1;
+        }
     }
 
     pid_t pid = fork();

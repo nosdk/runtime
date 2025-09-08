@@ -8,6 +8,7 @@
 enum nosdk_io_kind {
     KAFKA_CONSUME_TOPIC,
     KAFKA_PRODUCE_TOPIC,
+    POSTGRES,
 };
 
 // used to request initialization and setup of IO adapters
@@ -20,6 +21,15 @@ struct nosdk_kafka_thread_ctx {
     struct nosdk_kafka *k;
     char *root_dir;
     pthread_t thread;
+};
+
+struct nosdk_io_process_ctx {
+    int process_id;
+    char *root_dir;
+    int socket_fd;
+
+    struct nosdk_kafka_thread_ctx kafka_contexts[MAX_KAFKA];
+    int num_kafka_contexts;
 };
 
 struct nosdk_io_mgr {
