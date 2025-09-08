@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <errno.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -7,6 +8,7 @@
 #include <string.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "process.h"
@@ -50,7 +52,7 @@ int nosdk_process_mgr_add(
 void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
     for (int i = 0; i < mgr->num_procs; i++) {
         if (mgr->procs[i].pid != -1) {
-            siginterrupt(mgr->procs[i].pid, 0);
+            kill(mgr->procs[i].pid, SIGTERM);
             waitpid(mgr->procs[i].pid, NULL, 0);
             nosdk_debugf("stopped %d\n", mgr->procs[i].pid);
         }
@@ -101,8 +103,13 @@ char *nosdk_process_mgr_mkenv(
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
-        snprintf(src_path, PATH_MAX, "%s/%s", cwd, entry->d_name);
-        snprintf(dst_path, PATH_MAX, "%s/%s", root_dir, entry->d_name);
+        int src_len = snprintf(src_path, PATH_MAX, "%s/%s", cwd, entry->d_name);
+        int dst_len = snprintf(dst_path, PATH_MAX, "%s/%s", root_dir, entry->d_name);
+        if (src_len >= PATH_MAX || dst_len >= PATH_MAX) {
+            fprintf(stderr, "path too long: %s or %s\n", entry->d_name, root_dir);
+            closedir(dir);
+            return NULL;
+        }
 
         if (symlink(src_path, dst_path) == -1) {
             fprintf(
@@ -164,7 +171,10 @@ int nosdk_process_start(
         close(stdout_pipe[1]);
         close(stderr_pipe[1]);
 
-        chdir(proc->root_dir);
+        if (chdir(proc->root_dir) < 0) {
+            perror("chdir");
+            exit(1);
+        }
         execl("/bin/sh", "sh", "-c", proc->command, NULL);
         perror("execl");
         exit(1);

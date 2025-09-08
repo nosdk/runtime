@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <librdkafka/rdkafka.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -67,7 +68,7 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
     }
 
     printf(
-        "partition %d, offset is %lli\n", partition->partition,
+        "partition %d, offset is %" PRId64 "\n", partition->partition,
         partition->offset);
 
     rd_kafka_resp_err_t err = rd_kafka_subscribe(consumer->rk, subscription);
@@ -141,7 +142,7 @@ int nosdk_kafka_write_headers(rd_kafka_message_t *msg, char *filepath) {
         }
 
         dprintf(headers_fd, "\"_partition\":%d,\n", msg->partition);
-        dprintf(headers_fd, "\"_offset\":%lli}", msg->offset);
+        dprintf(headers_fd, "\"_offset\":%" PRId64 "}", msg->offset);
         close(headers_fd);
     }
 

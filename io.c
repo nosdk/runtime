@@ -1,8 +1,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <librdkafka/rdkafka.h>
+#include <limits.h>
 #include <poll.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -157,7 +159,7 @@ void *nosdk_kafka_consumer_thread(void *arg) {
 
         while (total_written < msg->len) {
             ssize_t result = write(
-                write_fd, &msg->payload[total_written],
+                write_fd, (char*)msg->payload + total_written,
                 msg->len - total_written);
             total_written += result;
         }
