@@ -15,6 +15,7 @@
 
 #include "http.h"
 #include "io.h"
+#include "postgres.h"
 #include "util.h"
 
 int nosdk_io_mgr_init(struct nosdk_io_mgr *mgr) { return 0; }
@@ -123,7 +124,18 @@ int nosdk_io_mgr_setup(
 
         return 0;
     } else if (spec.kind == POSTGRES) {
-        ctx->server = nosdk_http_server_new();
+        if (ctx->server == NULL) {
+            ctx->server = nosdk_http_server_new();
+        }
+
+        struct nosdk_http_handler handler = {
+            .prefix = "/db",
+            .handler = nosdk_pg_handler,
+        };
+
+        if (nosdk_http_server_handle(ctx->server, handler) != 0) {
+            return -1;
+        }
     }
 
     return 0;
@@ -132,15 +144,7 @@ int nosdk_io_mgr_setup(
 void *nosdk_io_mgr_http_thread(void *arg) {
     struct nosdk_io_process_ctx *ctx = (struct nosdk_io_process_ctx *)arg;
 
-    if (listen(ctx->server->socket_fd, 10) != 0) {
-        perror("listen");
-        return NULL;
-    }
-
-    while (1) {
-        if (nosdk_http_handle(ctx->server) != 0)
-            break;
-    }
+    nosdk_http_server_start(ctx->server);
 
     return NULL;
 }

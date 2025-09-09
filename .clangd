@@ -1,2 +1,2 @@
 CompileFlags:
-  Add: [-I/opt/homebrew/include]
+  Add: [-I/opt/homebrew/include, -I/opt/homebrew/opt/libpq/include]

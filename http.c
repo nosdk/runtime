@@ -7,8 +7,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define HTTP_PATH_MAX 256
-
 struct nosdk_http_server *nosdk_http_server_new() {
     int opt = 1;
 
@@ -44,14 +42,24 @@ struct nosdk_http_server *nosdk_http_server_new() {
     server->socket_fd = socket_fd;
     server->port = ntohs(addr.sin_port);
     server->header_buf = malloc(HEADER_BUF_SIZE);
+    server->num_handlers = 0;
 
     return server;
 }
 
-struct nosdk_http_request {
-    char path[HTTP_PATH_MAX];
-    int client_fd;
-};
+int nosdk_http_server_handle(
+    struct nosdk_http_server *server, struct nosdk_http_handler handler) {
+
+    if (server->num_handlers >= MAX_HANDLERS) {
+        fprintf(stderr, "http server max handlers reached\n");
+        return -1;
+    }
+
+    server->handlers[server->num_handlers] = handler;
+    server->num_handlers++;
+
+    return 0;
+}
 
 struct nosdk_http_request *
 nosdk_http_parse_head(struct nosdk_http_server *server, int client_fd) {
@@ -96,12 +104,6 @@ void nosdk_http_respond_invalid(int client_fd) {
     close(client_fd);
 }
 
-void nosdk_http_handle_db(struct nosdk_http_request *req) {
-    char *response = "HTTP/1.1 200 OK\nContent-Length: 0";
-    write(req->client_fd, response, strlen(response));
-    nosdk_http_request_end(req);
-}
-
 int nosdk_http_handle(struct nosdk_http_server *server) {
     struct sockaddr_in client_addr = {0};
     socklen_t client_len = sizeof(client_addr);
@@ -119,11 +121,31 @@ int nosdk_http_handle(struct nosdk_http_server *server) {
 
     printf("request path: %s\n", req->path);
 
-    if (memcmp(req->path, "/db", 3) == 0) {
-        nosdk_http_handle_db(req);
-        return 0;
+    for (int i = 0; i < server->num_handlers; i++) {
+        struct nosdk_http_handler *handler = &server->handlers[i];
+
+        if (memcmp(req->path, handler->prefix, strlen(handler->prefix)) == 0) {
+            handler->handler(req);
+            nosdk_http_request_end(req);
+            return 0;
+        }
     }
 
     nosdk_http_respond_not_found(req);
+    return 0;
+}
+
+int nosdk_http_server_start(struct nosdk_http_server *server) {
+    if (listen(server->socket_fd, 10) != 0) {
+        perror("listen");
+        return -1;
+    }
+
+    while (1) {
+        if (nosdk_http_handle(server) != 0) {
+            break;
+        }
+    }
+
     return 0;
 }

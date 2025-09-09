@@ -26,6 +26,19 @@ services:
       - '18082:18082' # HTTP Proxy for external clients
     volumes:
       - redpanda-0:/var/lib/redpanda/data
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: nosdk
+      POSTGRES_PASSWORD: nosdk
+      POSTGRES_DB: nosdk
+    ports:
+      - 5432:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
 volumes:
   redpanda-0: null
+  pgdata: null
 

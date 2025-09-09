@@ -1,11 +1,11 @@
-SOURCES = main.c io.c process.c kafka.c config.c http.c
-HEADERS = io.h kafka.h process.h config.h http.h
+SOURCES = main.c io.c process.c kafka.c config.c http.c postgres.c
+HEADERS = io.h kafka.h process.h config.h http.h postgres.h
 CFLAGS = -Wall -g
-LIBS = -lrdkafka -lcyaml
+LIBS = -lrdkafka -lcyaml -lpq
 
 # macOS homebrew flags
 ifeq ($(shell uname),Darwin)
-    CFLAGS += -I/opt/homebrew/include -L/opt/homebrew/lib
+    CFLAGS += -I/opt/homebrew/include -L/opt/homebrew/lib -I/opt/homebrew/opt/libpq/include -L/opt/homebrew/opt/libpq/lib
 endif
 
 .PHONY: all clean
