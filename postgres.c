@@ -2,13 +2,14 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "http.h"
 #include "postgres.h"
 
 void nosdk_pg_disconnect(PGconn *conn) { PQfinish(conn); }
 
 PGconn *nosdk_pg_connect() {
-    PGconn *conn =
-        PQconnectdb("dbname=nosdk user=nosdk password=nosdk host=localhost");
+    PGconn *conn = PQconnectdb(
+        "dbname=nosdk user=nosdk password=nosdk host=localhost port=15432");
     if (PQstatus(conn) != CONNECTION_OK) {
         fprintf(stderr, "connection error: %s\n", PQerrorMessage(conn));
         nosdk_pg_disconnect(conn);
@@ -19,7 +20,7 @@ PGconn *nosdk_pg_connect() {
 }
 
 void nosdk_pg_handler(struct nosdk_http_request *req) {
-    printf("postgres handler %s\n", req->path);
+    printf("postgres handler %d %s\n", req->method, req->path);
 
     PGconn *conn = nosdk_pg_connect();
     if (conn == NULL) {
@@ -27,6 +28,9 @@ void nosdk_pg_handler(struct nosdk_http_request *req) {
         write(req->client_fd, response, strlen(response));
         return;
     }
+
+    char *data = nosdk_http_request_body_alloc(req);
+    printf("body data: %s\n", data);
 
     char *response = "HTTP/1.1 200 OK";
     write(req->client_fd, response, strlen(response));
