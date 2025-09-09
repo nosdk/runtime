@@ -15,9 +15,19 @@ struct nosdk_kafka {
     char *topic;
 };
 
+struct nosdk_kafka_thread_ctx {
+    struct nosdk_kafka *k;
+    char *root_dir;
+    pthread_t thread;
+};
+
 int nosdk_kafka_init(struct nosdk_kafka *k);
 
 // write the message headers to a regular file at path <filepath>.headers
 int nosdk_kafka_write_headers(rd_kafka_message_t *msg, char *filepath);
+
+void *nosdk_kafka_consumer_thread(void *arg);
+
+void *nosdk_kafka_producer_thread(void *arg);
 
 #endif // _NOSDK_KAFKA_H

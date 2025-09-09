@@ -5,7 +5,6 @@
 
 #include "io.h"
 
-#define MAX_PROCS 100
 #define MAX_IO 16
 
 struct nosdk_process {

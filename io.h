@@ -2,6 +2,7 @@
 #define _NOSDK_IO_H
 
 #define MAX_KAFKA 16
+#define MAX_PROCS 100
 
 #include "kafka.h"
 
@@ -17,34 +18,32 @@ struct nosdk_io_spec {
     char *data;
 };
 
-struct nosdk_kafka_thread_ctx {
-    struct nosdk_kafka *k;
-    char *root_dir;
-    pthread_t thread;
-};
-
 struct nosdk_io_process_ctx {
     int process_id;
     char *root_dir;
     int socket_fd;
 
-    struct nosdk_kafka_thread_ctx kafka_contexts[MAX_KAFKA];
+    struct nosdk_kafka_thread_ctx *kafka_contexts[MAX_KAFKA];
     int num_kafka_contexts;
 };
 
 struct nosdk_io_mgr {
     struct nosdk_kafka kafkas[MAX_KAFKA];
     int num_kafkas;
-    struct nosdk_kafka_thread_ctx *kafka_contexts[128];
-    int num_kafka_contexts;
+    struct nosdk_io_process_ctx contexts[MAX_PROCS];
+    int num_contexts;
 };
 
 typedef struct nosdk_io_mgr nosdk_io_mgr;
 
 int nosdk_io_mgr_init(struct nosdk_io_mgr *mgr);
 
+struct nosdk_io_process_ctx *nosdk_io_process_ctx_new(struct nosdk_io_mgr *mgr);
+
 int nosdk_io_mgr_setup(
-    struct nosdk_io_mgr *mgr, struct nosdk_io_spec spec, char *root_dir);
+    struct nosdk_io_mgr *mgr,
+    struct nosdk_io_process_ctx *ctx,
+    struct nosdk_io_spec spec);
 
 void nosdk_io_mgr_teardown(struct nosdk_io_mgr *mgr);
 

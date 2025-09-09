@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "io.h"
 #include "process.h"
 #include "util.h"
 
@@ -148,13 +149,17 @@ int nosdk_process_start(
         return -1;
     }
 
+    struct nosdk_io_process_ctx *ctx = nosdk_io_process_ctx_new(mgr->io_mgr);
+
     proc->root_dir = nosdk_process_mgr_mkenv(mgr, proc);
     if (proc->root_dir == NULL) {
         return -1;
     }
 
+    ctx->root_dir = proc->root_dir;
+
     for (int i = 0; i < proc->num_io; i++) {
-        int ret = nosdk_io_mgr_setup(mgr->io_mgr, proc->io[i], proc->root_dir);
+        int ret = nosdk_io_mgr_setup(mgr->io_mgr, ctx, proc->io[i]);
         if (ret == -1) {
             return -1;
         }
