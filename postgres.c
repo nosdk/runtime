@@ -68,12 +68,15 @@ int create_table_jsonb(PGconn *conn, const char *table_name) {
     return 0;
 }
 
+char *get_table_name(struct nosdk_http_request *req) {
+    char *table_prefix = "/db/tables";
+    return &req->path[strlen(table_prefix) + 1];
+}
+
 void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
     char *data = nosdk_http_request_body_alloc(req);
 
-    char *table_prefix = "/db/tables";
-
-    char *table_name = &req->path[strlen(table_prefix) + 1];
+    char *table_name = get_table_name(req);
     if (!table_exists(conn, table_name)) {
         if (create_table_jsonb(conn, table_name) != 0) {
             char *response = "HTTP/1.1 500 Internal Error";
@@ -92,6 +95,7 @@ void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
     printf("statement: %.*s\n", sb->size, sb->data);
 
     PGresult *res = PQexec(conn, sb->data);
+    nosdk_string_buffer_free(sb);
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         fprintf(stderr, "insert failed: %s\n", PQerrorMessage(conn));
     }
@@ -100,6 +104,47 @@ void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
 
     char *response = "HTTP/1.1 200 OK";
     write(req->client_fd, response, strlen(response));
+}
+
+ssize_t writestr(int client_fd, char *s) {
+    return write(client_fd, s, strlen(s));
+}
+
+void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
+    char *table_name = get_table_name(req);
+    struct nosdk_string_buffer *sb = nosdk_string_buffer_new();
+
+    char query[256];
+    snprintf(query, sizeof(query), "SELECT data FROM %s", table_name);
+
+    PGresult *res = PQexec(conn, query);
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        fprintf(stderr, "select failed: %s", PQerrorMessage(conn));
+        return;
+    }
+
+    nosdk_string_buffer_append(sb, "[");
+    for (int i = 0; i < PQntuples(res); i++) {
+        char *data = PQgetvalue(res, i, 0);
+        nosdk_string_buffer_append(sb, data);
+        if (i < PQntuples(res) - 1) {
+            nosdk_string_buffer_append(sb, ",");
+        }
+    }
+    nosdk_string_buffer_append(sb, "]");
+
+    PQclear(res);
+
+    char head_buf[256];
+
+    writestr(req->client_fd, "HTTP/1.1 200 OK\r\n");
+    writestr(req->client_fd, "Content-Type: application/json\r\n");
+    snprintf(head_buf, sizeof(head_buf), "Content-Length: %d", sb->size);
+    writestr(req->client_fd, head_buf);
+    writestr(req->client_fd, "\r\n\r\n");
+    write(req->client_fd, sb->data, sb->size);
+
+    nosdk_string_buffer_free(sb);
 }
 
 void nosdk_pg_handler(struct nosdk_http_request *req) {
@@ -114,6 +159,8 @@ void nosdk_pg_handler(struct nosdk_http_request *req) {
 
     if (req->method == HTTP_METHOD_POST) {
         nosdk_pg_handle_post(req, conn);
+    } else if (req->method == HTTP_METHOD_GET) {
+        nosdk_pg_handle_get(req, conn);
     } else {
         char *response = "HTTP/1.1 404 Not Found";
         write(req->client_fd, response, strlen(response));
