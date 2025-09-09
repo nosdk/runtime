@@ -2,8 +2,10 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <librdkafka/rdkafka.h>
+#include <limits.h>
 #include <poll.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

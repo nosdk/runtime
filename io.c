@@ -1,5 +1,3 @@
-#include <_stdio.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <librdkafka/rdkafka.h>
 #include <limits.h>
