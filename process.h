@@ -10,7 +10,6 @@
 struct nosdk_process {
     char *name;
     char *command;
-    char *root_dir;
 
     pid_t pid;
     int stdout_fd;
@@ -20,6 +19,8 @@ struct nosdk_process {
     // io
     struct nosdk_io_spec io[MAX_IO];
     int num_io;
+
+    struct nosdk_io_process_ctx *ctx;
 };
 
 void nosdk_process_add_io(

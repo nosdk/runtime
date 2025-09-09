@@ -4,6 +4,7 @@
 #define MAX_KAFKA 16
 #define MAX_PROCS 100
 
+#include "http.h"
 #include "kafka.h"
 
 enum nosdk_io_kind {
@@ -21,7 +22,9 @@ struct nosdk_io_spec {
 struct nosdk_io_process_ctx {
     int process_id;
     char *root_dir;
-    int socket_fd;
+
+    struct nosdk_http_server *server;
+    pthread_t http_thread;
 
     struct nosdk_kafka_thread_ctx *kafka_contexts[MAX_KAFKA];
     int num_kafka_contexts;
@@ -44,6 +47,8 @@ int nosdk_io_mgr_setup(
     struct nosdk_io_mgr *mgr,
     struct nosdk_io_process_ctx *ctx,
     struct nosdk_io_spec spec);
+
+void nosdk_io_mgr_start(struct nosdk_io_mgr *mgr);
 
 void nosdk_io_mgr_teardown(struct nosdk_io_mgr *mgr);
 

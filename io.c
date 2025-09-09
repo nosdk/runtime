@@ -1,3 +1,4 @@
+#include <_stdio.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <librdkafka/rdkafka.h>
@@ -8,9 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/fcntl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "http.h"
 #include "io.h"
 #include "util.h"
 
@@ -18,6 +21,7 @@ int nosdk_io_mgr_init(struct nosdk_io_mgr *mgr) { return 0; }
 
 struct nosdk_io_process_ctx *
 nosdk_io_process_ctx_new(struct nosdk_io_mgr *mgr) {
+    mgr->contexts[mgr->num_contexts].process_id = mgr->num_contexts;
     mgr->num_contexts++;
     return &mgr->contexts[mgr->num_contexts - 1];
 }
@@ -106,6 +110,7 @@ int nosdk_io_mgr_setup(
         pthread_create(
             &kthread->thread, NULL, nosdk_kafka_consumer_thread, kthread);
 
+        return 0;
     } else if (spec.kind == KAFKA_PRODUCE_TOPIC) {
         ret = nosdk_io_mgr_kafka_produce(mgr, spec.data);
         if (ret != 0) {
@@ -115,25 +120,51 @@ int nosdk_io_mgr_setup(
         kthread->k = nosdk_io_mgr_get_producer(mgr);
         pthread_create(
             &kthread->thread, NULL, nosdk_kafka_producer_thread, kthread);
+
+        return 0;
     } else if (spec.kind == POSTGRES) {
-        printf("postgres backend not implemented\n");
-        return -1;
+        ctx->server = nosdk_http_server_new();
     }
 
-    if (kthread->k == NULL) {
-        return -1;
-    }
-
-    // nosdk_io_mgr_add_kafka_ctx(mgr, ctx);
     return 0;
+}
+
+void *nosdk_io_mgr_http_thread(void *arg) {
+    struct nosdk_io_process_ctx *ctx = (struct nosdk_io_process_ctx *)arg;
+
+    if (listen(ctx->server->socket_fd, 10) != 0) {
+        perror("listen");
+        return NULL;
+    }
+
+    while (1) {
+        if (nosdk_http_handle(ctx->server) != 0)
+            break;
+    }
+
+    return NULL;
+}
+
+void nosdk_io_mgr_start(struct nosdk_io_mgr *mgr) {
+    for (int i = 0; i < mgr->num_contexts; i++) {
+        pthread_create(
+            &mgr->contexts[i].http_thread, NULL, nosdk_io_mgr_http_thread,
+            (void *)&mgr->contexts[i]);
+    }
 }
 
 void nosdk_io_mgr_teardown(struct nosdk_io_mgr *mgr) {
     for (int i = 0; i < mgr->num_kafkas; i++) {
+        nosdk_debugf("destroying kafka client %d\n", i);
         if (mgr->kafkas[i].type == PRODUCER) {
             rd_kafka_flush(mgr->kafkas[i].rk, 500);
         }
-        nosdk_debugf("destroying kafka %s\n", mgr->kafkas[i].type);
         rd_kafka_destroy(mgr->kafkas[i].rk);
+    }
+
+    for (int i = 0; i < mgr->num_contexts; i++) {
+        if (mgr->contexts[i].server->socket_fd != 0) {
+            close(mgr->contexts[i].server->socket_fd);
+        }
     }
 }

@@ -49,6 +49,12 @@ int config_main(char *path) {
             nosdk_process_add_io(&p, s);
         }
 
+        struct nosdk_io_spec s = {
+            .kind = POSTGRES,
+            .data = NULL,
+        };
+        nosdk_process_add_io(&p, s);
+
         if (c.nproc == 0) {
             nosdk_process_mgr_add(&proc_mgr, p);
         } else {
@@ -136,6 +142,12 @@ int main(int argc, char *argv[]) {
         printf("no command specified\n");
         exit(1);
     }
+
+    struct nosdk_io_spec http_spec = {
+        .kind = POSTGRES,
+        .data = NULL,
+    };
+    nosdk_process_add_io(&proc, http_spec);
 
     for (int i = 0; i < nproc; i++) {
         nosdk_process_mgr_add(&mgr, proc);

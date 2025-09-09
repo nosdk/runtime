@@ -1,3 +1,4 @@
+#include <_stdlib.h>
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
@@ -58,13 +59,13 @@ void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
             nosdk_debugf("stopped %d\n", mgr->procs[i].pid);
         }
 
-        if (mgr->procs[i].root_dir) {
-            nosdk_debugf("removing %s\n", mgr->procs[i].root_dir);
+        if (mgr->procs[i].ctx->root_dir) {
+            nosdk_debugf("removing %s\n", mgr->procs[i].ctx->root_dir);
 
             // hacky, but does the right thing
             pid_t pid = fork();
             if (pid == 0) {
-                char *argv[] = {"rm", "-rf", mgr->procs[i].root_dir, NULL};
+                char *argv[] = {"rm", "-rf", mgr->procs[i].ctx->root_dir, NULL};
                 execvp("rm", argv);
             } else {
                 waitpid(pid, NULL, 0);
@@ -149,17 +150,15 @@ int nosdk_process_start(
         return -1;
     }
 
-    struct nosdk_io_process_ctx *ctx = nosdk_io_process_ctx_new(mgr->io_mgr);
+    proc->ctx = nosdk_io_process_ctx_new(mgr->io_mgr);
 
-    proc->root_dir = nosdk_process_mgr_mkenv(mgr, proc);
-    if (proc->root_dir == NULL) {
+    proc->ctx->root_dir = nosdk_process_mgr_mkenv(mgr, proc);
+    if (proc->ctx->root_dir == NULL) {
         return -1;
     }
 
-    ctx->root_dir = proc->root_dir;
-
     for (int i = 0; i < proc->num_io; i++) {
-        int ret = nosdk_io_mgr_setup(mgr->io_mgr, ctx, proc->io[i]);
+        int ret = nosdk_io_mgr_setup(mgr->io_mgr, proc->ctx, proc->io[i]);
         if (ret == -1) {
             return -1;
         }
@@ -181,10 +180,18 @@ int nosdk_process_start(
         close(stdout_pipe[1]);
         close(stderr_pipe[1]);
 
-        if (chdir(proc->root_dir) < 0) {
+        if (chdir(proc->ctx->root_dir) < 0) {
             perror("chdir");
             exit(1);
         }
+
+        // set http environment variable
+        char env_buf[128];
+        snprintf(
+            env_buf, sizeof(env_buf), "http://localhost:%d",
+            proc->ctx->server->port);
+        setenv("NOSDK", env_buf, 1);
+
         execl("/bin/sh", "sh", "-c", proc->command, NULL);
         perror("execl");
         exit(1);
@@ -258,6 +265,8 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
     }
 
     int active_procs = mgr->num_procs;
+
+    nosdk_io_mgr_start(mgr->io_mgr);
 
     while (should_run && active_procs > 0) {
         int ready = poll(fds, num_fds, -1);

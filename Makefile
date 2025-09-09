@@ -1,5 +1,5 @@
-SOURCES = main.c io.c process.c kafka.c config.c
-HEADERS = io.h kafka.h process.h config.h
+SOURCES = main.c io.c process.c kafka.c config.c http.c
+HEADERS = io.h kafka.h process.h config.h http.h
 CFLAGS = -Wall -g
 LIBS = -lrdkafka -lcyaml
 
