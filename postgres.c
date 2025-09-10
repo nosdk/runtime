@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <libpq-fe.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -93,8 +94,16 @@ int create_table_jsonb(PGconn *conn, const char *table_name) {
 }
 
 char *get_table_name(struct nosdk_http_request *req) {
-    char *table_prefix = "/db/tables";
-    return &req->path[strlen(table_prefix) + 1];
+    char *table_prefix = "/db/tables/";
+    char *name = strdup(&req->path[strlen(table_prefix)]);
+    int len = strlen(name);
+
+    for (int i = 0; i < len; i++) {
+        if (name[i] == '?') {
+            name[i] = '\0';
+        }
+    }
+    return name;
 }
 
 int nosdk_pg_insert_item(PGconn *conn, char *table_name, char *item) {
@@ -123,7 +132,8 @@ struct json_array_iter {
     int pos;
 };
 
-int next_item(struct json_array_iter *iter, int *start_pos, int *len) {
+int json_array_next_item(
+    struct json_array_iter *iter, int *start_pos, int *len) {
     int start = 0;
     int end = 0;
     int depth = 0;
@@ -152,6 +162,116 @@ int next_item(struct json_array_iter *iter, int *start_pos, int *len) {
     return start;
 }
 
+int is_operator(char c) {
+    if (c == '=' || c == '<' || c == '>') {
+        return 1;
+    }
+    return 0;
+}
+
+// https://stackoverflow.com/a/14530993
+void urldecode2(char *dst, const char *src) {
+    char a, b;
+    while (*src) {
+        if ((*src == '%') && ((a = src[1]) && (b = src[2])) &&
+            (isxdigit(a) && isxdigit(b))) {
+            if (a >= 'a')
+                a -= 'a' - 'A';
+            if (a >= 'A')
+                a -= ('A' - 10);
+            else
+                a -= '0';
+            if (b >= 'a')
+                b -= 'a' - 'A';
+            if (b >= 'A')
+                b -= ('A' - 10);
+            else
+                b -= '0';
+            *dst++ = 16 * a + b;
+            src += 3;
+        } else if (*src == '+') {
+            *dst++ = ' ';
+            src++;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst++ = '\0';
+}
+
+char *val2pgtype(char *val) {
+    int seen_dot = 0;
+
+    printf("val %s\n", val);
+
+    for (int i = 0; i < strlen(val); i++) {
+        if (val[i] == '.') {
+            seen_dot = 1;
+        } else if (val[i] < 48 || val[i] > 57) {
+            return "text";
+        }
+    }
+
+    if (seen_dot) {
+        return "real";
+    }
+
+    return "integer";
+}
+
+int translate_query_string(
+    struct nosdk_string_buffer *sb, const char *paramValues[16], char *query) {
+
+    urldecode2(query, query);
+
+    int len = strlen(query);
+    int in_key = 1;
+    int key_len = 0;
+    int val_len = 0;
+
+    char key[64];
+    char val[64];
+    char operator;
+
+    int n_clauses = 0;
+
+    for (int i = 1; i < len; i++) {
+        char this_char = query[i];
+
+        if (in_key && !is_operator(this_char)) {
+            key[key_len] = this_char;
+            key_len++;
+        } else if (in_key && is_operator(this_char)) {
+            operator = this_char;
+            in_key = 0;
+        } else if (!in_key && this_char != '&') {
+            val[val_len] = this_char;
+            val_len++;
+        }
+
+        if (this_char == '&' || i == (len - 1)) {
+            char *word = "WHERE";
+            if (n_clauses > 0) {
+                word = "AND";
+            }
+
+            val[val_len] = '\0';
+            paramValues[n_clauses] = strdup(val);
+            printf("stored val %s\n", val);
+            n_clauses++;
+            nosdk_string_buffer_append(
+                sb, " %s (data->>'%.*s')::%s %c $%d", word, key_len, key,
+                val2pgtype(val), operator, n_clauses);
+
+            key_len = 0;
+            val_len = 0;
+            in_key = 1;
+        }
+    }
+
+    return n_clauses;
+}
+
 void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
     char *data = nosdk_http_request_body_alloc(req);
 
@@ -177,7 +297,7 @@ void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
         };
         int start_pos = 0;
         int len = 0;
-        while (next_item(&iter, &start_pos, &len) > 0) {
+        while (json_array_next_item(&iter, &start_pos, &len) > 0) {
             // add null terminator. there should always be a , or ] after an
             // array item so...
             char c = data[start_pos + len];
@@ -200,16 +320,29 @@ ssize_t writestr(int client_fd, char *s) {
 
 void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
     char *table_name = get_table_name(req);
+    const char *paramValues[16] = {0};
+    int n_params = 0;
+
+    struct nosdk_string_buffer *qbuf = nosdk_string_buffer_new();
     struct nosdk_string_buffer *sb = nosdk_string_buffer_new();
 
-    char query[256];
-    snprintf(query, sizeof(query), "SELECT data FROM %s", table_name);
+    nosdk_string_buffer_append(qbuf, "SELECT data FROM %s", table_name);
 
-    printf("get query %s\n", query);
+    char *qstr = strstr(req->path, "?");
+    if (qstr != NULL) {
+        n_params = translate_query_string(qbuf, paramValues, qstr);
+    }
 
-    PGresult *res = PQexec(conn, query);
+    nosdk_debugf("query: %s\n", qbuf->data);
+
+    PGresult *res = PQexecParams(
+        conn, qbuf->data, n_params, NULL, paramValues, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         fprintf(stderr, "select failed: %s", PQerrorMessage(conn));
+        nosdk_http_respond(
+            req, HTTP_STATUS_INVALID_REQUEST, "text/plain", NULL, 0);
+        nosdk_string_buffer_free(sb);
+        nosdk_string_buffer_free(qbuf);
         return;
     }
 
@@ -228,6 +361,7 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
     nosdk_http_respond(
         req, HTTP_STATUS_OK, "application/json", sb->data, sb->size);
     nosdk_string_buffer_free(sb);
+    nosdk_string_buffer_free(qbuf);
 }
 
 void nosdk_pg_handler(struct nosdk_http_request *req) {

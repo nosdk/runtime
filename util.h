@@ -42,7 +42,7 @@ static inline int nosdk_string_buffer_append(
     int needed = vsnprintf(NULL, 0, format, args);
     va_end(args);
 
-    if (sb->size + needed >= sb->capacity) {
+    if (sb->size + needed + 1 >= sb->capacity) {
         sb->capacity = (sb->size + needed + 1) * 2;
         sb->data = (char *)realloc(sb->data, sb->capacity);
     }
@@ -52,6 +52,8 @@ static inline int nosdk_string_buffer_append(
     va_end(args);
 
     sb->size += needed;
+
+    sb->data[sb->size] = '\0';
 
     return 0;
 }
