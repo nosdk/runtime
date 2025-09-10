@@ -9,18 +9,42 @@
 #include "postgres.h"
 #include "util.h"
 
+struct nosdk_pg pg_pool = {0};
+
 void nosdk_pg_disconnect(PGconn *conn) { PQfinish(conn); }
 
-PGconn *nosdk_pg_connect() {
-    PGconn *conn = PQconnectdb(
-        "dbname=nosdk user=nosdk password=nosdk host=localhost port=15432");
-    if (PQstatus(conn) != CONNECTION_OK) {
-        fprintf(stderr, "connection error: %s\n", PQerrorMessage(conn));
-        nosdk_pg_disconnect(conn);
-        return NULL;
+PGconn *nosdk_pg_get_connection() {
+    for (int i = 0; i < PG_POOL_MAX; i++) {
+        if (!pg_pool.in_use[i]) {
+            if (pg_pool.pool[i] != NULL) {
+                pg_pool.in_use[i] = 1;
+                return pg_pool.pool[i];
+            } else {
+                PGconn *conn = PQconnectdb(
+                    "dbname=nosdk user=nosdk password=nosdk host=localhost "
+                    "port=15432");
+                if (PQstatus(conn) != CONNECTION_OK) {
+                    fprintf(
+                        stderr, "connection error: %s\n", PQerrorMessage(conn));
+                    nosdk_pg_disconnect(conn);
+                    return NULL;
+                }
+                pg_pool.in_use[i] = 1;
+                pg_pool.pool[i] = conn;
+                return conn;
+            }
+        }
     }
+    fprintf(stderr, "all postgres connections in use\n");
+    return NULL;
+}
 
-    return conn;
+void nosdk_pg_connection_release(PGconn *conn) {
+    for (int i = 0; i < PG_POOL_MAX; i++) {
+        if (pg_pool.pool[i] == conn) {
+            pg_pool.in_use[i] = 0;
+        }
+    }
 }
 
 int table_exists(PGconn *conn, const char *table_name) {
@@ -73,6 +97,61 @@ char *get_table_name(struct nosdk_http_request *req) {
     return &req->path[strlen(table_prefix) + 1];
 }
 
+int nosdk_pg_insert_item(PGconn *conn, char *table_name, char *item) {
+    const char *paramValues[1] = {item};
+    char query[128];
+
+    snprintf(
+        query, sizeof(query), "INSERT INTO %s (data) VALUES ($1::jsonb)",
+        table_name);
+
+    PGresult *res =
+        PQexecParams(conn, query, 1, NULL, paramValues, NULL, NULL, 0);
+
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        fprintf(stderr, "insert failed: %s\n", PQerrorMessage(conn));
+        return -1;
+    }
+
+    PQclear(res);
+    return 0;
+}
+
+struct json_array_iter {
+    char *data;
+    int data_len;
+    int pos;
+};
+
+int next_item(struct json_array_iter *iter, int *start_pos, int *len) {
+    int start = 0;
+    int end = 0;
+    int depth = 0;
+
+    while (end == 0 && iter->pos < iter->data_len) {
+        char this_char = iter->data[iter->pos];
+
+        if (this_char == '{') {
+            start = iter->pos;
+            depth++;
+        } else if (this_char == '}') {
+            depth--;
+        }
+
+        iter->pos++;
+
+        if (start != 0 && depth == 0) {
+            end = iter->pos;
+            break;
+        }
+    }
+
+    *start_pos = start;
+    *len = (end - start);
+
+    return start;
+}
+
 void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
     char *data = nosdk_http_request_body_alloc(req);
 
@@ -85,25 +164,34 @@ void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
         }
     }
 
-    struct nosdk_string_buffer *sb = nosdk_string_buffer_new();
-
-    nosdk_string_buffer_append(
-        sb, "INSERT INTO %s (data) VALUES ('%s'::jsonb)", table_name, data);
-
-    sb->data[sb->size] = '\0';
-
-    printf("statement: %.*s\n", sb->size, sb->data);
-
-    PGresult *res = PQexec(conn, sb->data);
-    nosdk_string_buffer_free(sb);
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        fprintf(stderr, "insert failed: %s\n", PQerrorMessage(conn));
+    if (data[0] == '{') {
+        if (nosdk_pg_insert_item(conn, table_name, data) != 0) {
+            nosdk_http_respond(
+                req, HTTP_STATUS_INVALID_REQUEST, "text/plain", NULL, 0);
+            return;
+        }
+    } else if (data[0] == '[') {
+        struct json_array_iter iter = {
+            .data = data,
+            .data_len = strlen(data),
+        };
+        int start_pos = 0;
+        int len = 0;
+        while (next_item(&iter, &start_pos, &len) > 0) {
+            // add null terminator. there should always be a , or ] after an
+            // array item so...
+            char c = data[start_pos + len];
+            data[start_pos + len] = '\0';
+            if (nosdk_pg_insert_item(conn, table_name, &data[start_pos]) != 0) {
+                nosdk_http_respond(
+                    req, HTTP_STATUS_INVALID_REQUEST, "text/plain", NULL, 0);
+                return;
+            }
+            data[start_pos + len] = c;
+        }
     }
 
-    PQclear(res);
-
-    char *response = "HTTP/1.1 200 OK";
-    write(req->client_fd, response, strlen(response));
+    nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
 }
 
 ssize_t writestr(int client_fd, char *s) {
@@ -116,6 +204,8 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
 
     char query[256];
     snprintf(query, sizeof(query), "SELECT data FROM %s", table_name);
+
+    printf("get query %s\n", query);
 
     PGresult *res = PQexec(conn, query);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
@@ -135,25 +225,16 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
 
     PQclear(res);
 
-    char head_buf[256];
-
-    writestr(req->client_fd, "HTTP/1.1 200 OK\r\n");
-    writestr(req->client_fd, "Content-Type: application/json\r\n");
-    snprintf(head_buf, sizeof(head_buf), "Content-Length: %d", sb->size);
-    writestr(req->client_fd, head_buf);
-    writestr(req->client_fd, "\r\n\r\n");
-    write(req->client_fd, sb->data, sb->size);
-
+    nosdk_http_respond(
+        req, HTTP_STATUS_OK, "application/json", sb->data, sb->size);
     nosdk_string_buffer_free(sb);
 }
 
 void nosdk_pg_handler(struct nosdk_http_request *req) {
-    printf("postgres handler %d %s\n", req->method, req->path);
-
-    PGconn *conn = nosdk_pg_connect();
+    PGconn *conn = nosdk_pg_get_connection();
     if (conn == NULL) {
-        char *response = "HTTP/1.1 500 Internal Error";
-        write(req->client_fd, response, strlen(response));
+        nosdk_http_respond(
+            req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
         return;
     }
 
@@ -166,5 +247,5 @@ void nosdk_pg_handler(struct nosdk_http_request *req) {
         write(req->client_fd, response, strlen(response));
     }
 
-    nosdk_pg_disconnect(conn);
+    nosdk_pg_connection_release(conn);
 }

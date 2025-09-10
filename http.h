@@ -18,6 +18,14 @@ typedef enum {
     HTTP_METHOD_CONNECT
 } http_method_t;
 
+typedef enum {
+    HTTP_STATUS_NONE = 0,
+    HTTP_STATUS_OK = 200,
+    HTTP_STATUS_INVALID_REQUEST = 400,
+    HTTP_STATUS_NOT_FOUND = 404,
+    HTTP_STATUS_INTERNAL_ERROR = 500,
+} http_status_t;
+
 struct nosdk_http_request {
     http_method_t method;
     char path[HTTP_PATH_MAX];
@@ -30,6 +38,13 @@ struct nosdk_http_request {
 };
 
 char *nosdk_http_request_body_alloc(struct nosdk_http_request *req);
+
+int nosdk_http_respond(
+    struct nosdk_http_request *req,
+    http_status_t status,
+    char *content_type,
+    char *body,
+    int body_len);
 
 struct nosdk_http_handler {
     char *prefix;

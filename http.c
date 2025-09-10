@@ -6,18 +6,77 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-typedef struct {
+struct method_map {
     const char *name;
     http_method_t method;
-} method_map_t;
+};
 
-static const method_map_t method_table[] = {
+static const struct method_map method_table[] = {
     {"GET", HTTP_METHOD_GET},         {"POST", HTTP_METHOD_POST},
     {"PUT", HTTP_METHOD_PUT},         {"DELETE", HTTP_METHOD_DELETE},
     {"HEAD", HTTP_METHOD_HEAD},       {"OPTIONS", HTTP_METHOD_OPTIONS},
     {"PATCH", HTTP_METHOD_PATCH},     {"TRACE", HTTP_METHOD_TRACE},
     {"CONNECT", HTTP_METHOD_CONNECT}, {NULL, HTTP_METHOD_UNKNOWN} // Sentinel
 };
+
+struct status_map {
+    http_status_t status;
+    const char *head;
+};
+
+static const struct status_map status_table[] = {
+    {HTTP_STATUS_OK, "OK"},
+    {HTTP_STATUS_INVALID_REQUEST, "Invalid Request"},
+    {HTTP_STATUS_NOT_FOUND, "Not Found"},
+    {HTTP_STATUS_INTERNAL_ERROR, "Internal Server Error"},
+    {HTTP_STATUS_NONE, NULL},
+};
+
+const char *status_str(http_status_t status) {
+    for (int i = 0; status_table[i].head != NULL; i++) {
+        if (status_table[i].status == status) {
+            return status_table[i].head;
+        }
+    }
+    return "Unknown";
+}
+
+int nosdk_http_respond(
+    struct nosdk_http_request *req,
+    http_status_t status,
+    char *content_type,
+    char *body,
+    int body_len) {
+
+    char buf[256];
+
+    snprintf(
+        buf, sizeof(buf), "HTTP/1.1 %d %s\r\n", status, status_str(status));
+    if (!write(req->client_fd, buf, strlen(buf))) {
+        return -1;
+    }
+
+    snprintf(buf, sizeof(buf), "Content-Type: %s\r\n", content_type);
+    if (!write(req->client_fd, buf, strlen(buf))) {
+        return -1;
+    }
+
+    snprintf(buf, sizeof(buf), "Content-Length: %d\r\n\r\n", body_len);
+    if (!write(req->client_fd, buf, strlen(buf))) {
+        return -1;
+    }
+
+    int written = 0;
+    while (written < body_len) {
+        int result = write(req->client_fd, &body[written], body_len - written);
+        if (result < 1) {
+            return -1;
+        }
+        written += result;
+    }
+
+    return 0;
+}
 
 http_method_t nosdk_parse_method(char *data, int len) {
     for (int i = 0; method_table[i].name != NULL; i++) {
@@ -191,7 +250,6 @@ nosdk_http_parse_head(struct nosdk_http_server *server, int client_fd) {
         }
 
         if (consecutive_rns == 4) {
-            printf("headers end at byte %d/%d\n", i, (int)result);
             memcpy(req->body_data, &server->header_buf[i], result - i);
             req->body_data_len = result - i;
             break;
@@ -234,8 +292,6 @@ int nosdk_http_handle(struct nosdk_http_server *server) {
         nosdk_http_respond_invalid(client_fd);
         return 0;
     }
-
-    printf("request path: %s\n", req->path);
 
     for (int i = 0; i < server->num_handlers; i++) {
         struct nosdk_http_handler *handler = &server->handlers[i];
