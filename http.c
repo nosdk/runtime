@@ -175,6 +175,7 @@ struct nosdk_http_request *
 nosdk_http_parse_head(struct nosdk_http_server *server, int client_fd) {
 
     struct nosdk_http_request *req = malloc(sizeof(struct nosdk_http_request));
+    memset(req, 0, sizeof(struct nosdk_http_request));
     req->client_fd = client_fd;
 
     ssize_t result =

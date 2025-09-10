@@ -1,5 +1,5 @@
-#include <ctype.h>
 #include <libpq-fe.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,14 +12,43 @@
 
 struct nosdk_pg pg_pool = {0};
 
+int nosdk_pg_init() {
+    if (pg_pool.initialized) {
+        return 0;
+    }
+
+    int result = pthread_mutex_init(&pg_pool.mutex, NULL);
+    if (result != 0) {
+        fprintf(stderr, "failed to initialize pool mutex: %d\n", result);
+        return -1;
+    }
+
+    for (int i = 0; i < PG_POOL_MAX; i++) {
+        pg_pool.pool[i] = NULL;
+        pg_pool.in_use[i] = false;
+    }
+
+    pg_pool.initialized = true;
+    return 0;
+}
+
 void nosdk_pg_disconnect(PGconn *conn) { PQfinish(conn); }
 
 PGconn *nosdk_pg_get_connection() {
+    pthread_mutex_lock(&pg_pool.mutex);
+
     for (int i = 0; i < PG_POOL_MAX; i++) {
         if (!pg_pool.in_use[i]) {
             if (pg_pool.pool[i] != NULL) {
-                pg_pool.in_use[i] = 1;
-                return pg_pool.pool[i];
+                if (PQstatus(pg_pool.pool[i]) != CONNECTION_OK) {
+                    nosdk_debugf("cleaning up stale connection\n");
+                    PQfinish(pg_pool.pool[i]);
+                    pg_pool.pool[i] = NULL;
+                } else {
+                    pg_pool.in_use[i] = 1;
+                    pthread_mutex_unlock(&pg_pool.mutex);
+                    return pg_pool.pool[i];
+                }
             } else {
                 PGconn *conn = PQconnectdb(
                     "dbname=nosdk user=nosdk password=nosdk host=localhost "
@@ -28,24 +57,29 @@ PGconn *nosdk_pg_get_connection() {
                     fprintf(
                         stderr, "connection error: %s\n", PQerrorMessage(conn));
                     nosdk_pg_disconnect(conn);
+                    pthread_mutex_unlock(&pg_pool.mutex);
                     return NULL;
                 }
                 pg_pool.in_use[i] = 1;
                 pg_pool.pool[i] = conn;
+                pthread_mutex_unlock(&pg_pool.mutex);
                 return conn;
             }
         }
     }
+    pthread_mutex_unlock(&pg_pool.mutex);
     fprintf(stderr, "all postgres connections in use\n");
     return NULL;
 }
 
 void nosdk_pg_connection_release(PGconn *conn) {
+    pthread_mutex_lock(&pg_pool.mutex);
     for (int i = 0; i < PG_POOL_MAX; i++) {
         if (pg_pool.pool[i] == conn) {
             pg_pool.in_use[i] = 0;
         }
     }
+    pthread_mutex_unlock(&pg_pool.mutex);
 }
 
 int table_exists(PGconn *conn, const char *table_name) {
@@ -169,40 +203,8 @@ int is_operator(char c) {
     return 0;
 }
 
-// https://stackoverflow.com/a/14530993
-void urldecode2(char *dst, const char *src) {
-    char a, b;
-    while (*src) {
-        if ((*src == '%') && ((a = src[1]) && (b = src[2])) &&
-            (isxdigit(a) && isxdigit(b))) {
-            if (a >= 'a')
-                a -= 'a' - 'A';
-            if (a >= 'A')
-                a -= ('A' - 10);
-            else
-                a -= '0';
-            if (b >= 'a')
-                b -= 'a' - 'A';
-            if (b >= 'A')
-                b -= ('A' - 10);
-            else
-                b -= '0';
-            *dst++ = 16 * a + b;
-            src += 3;
-        } else if (*src == '+') {
-            *dst++ = ' ';
-            src++;
-        } else {
-            *dst++ = *src++;
-        }
-    }
-    *dst++ = '\0';
-}
-
 char *val2pgtype(char *val) {
     int seen_dot = 0;
-
-    printf("val %s\n", val);
 
     for (int i = 0; i < strlen(val); i++) {
         if (val[i] == '.') {
@@ -257,7 +259,6 @@ int translate_query_string(
 
             val[val_len] = '\0';
             paramValues[n_clauses] = strdup(val);
-            printf("stored val %s\n", val);
             n_clauses++;
             nosdk_string_buffer_append(
                 sb, " %s (data->>'%.*s')::%s %c $%d", word, key_len, key,
@@ -343,6 +344,7 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
             req, HTTP_STATUS_INVALID_REQUEST, "text/plain", NULL, 0);
         nosdk_string_buffer_free(sb);
         nosdk_string_buffer_free(qbuf);
+        PQclear(res);
         return;
     }
 
@@ -365,6 +367,8 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
 }
 
 void nosdk_pg_handler(struct nosdk_http_request *req) {
+    nosdk_pg_init();
+
     PGconn *conn = nosdk_pg_get_connection();
     if (conn == NULL) {
         nosdk_http_respond(

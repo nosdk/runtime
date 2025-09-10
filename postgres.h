@@ -2,6 +2,8 @@
 #define _NOSDK_POSTGRES_H
 
 #include <libpq-fe.h>
+#include <pthread.h>
+#include <stdbool.h>
 
 #include "http.h"
 
@@ -10,6 +12,8 @@
 struct nosdk_pg {
     PGconn *pool[PG_POOL_MAX];
     int in_use[PG_POOL_MAX];
+    pthread_mutex_t mutex;
+    bool initialized;
 };
 
 void nosdk_pg_handler(struct nosdk_http_request *req);

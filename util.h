@@ -1,6 +1,7 @@
 #ifndef _NOSDK_UTIL_H
 #define _NOSDK_UTIL_H
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +62,36 @@ static inline int nosdk_string_buffer_append(
 static inline void nosdk_string_buffer_free(struct nosdk_string_buffer *sb) {
     free(sb->data);
     free(sb);
+}
+
+// https://stackoverflow.com/a/14530993
+static inline void urldecode2(char *dst, const char *src) {
+    char a, b;
+    while (*src) {
+        if ((*src == '%') && ((a = src[1]) && (b = src[2])) &&
+            (isxdigit(a) && isxdigit(b))) {
+            if (a >= 'a')
+                a -= 'a' - 'A';
+            if (a >= 'A')
+                a -= ('A' - 10);
+            else
+                a -= '0';
+            if (b >= 'a')
+                b -= 'a' - 'A';
+            if (b >= 'A')
+                b -= ('A' - 10);
+            else
+                b -= '0';
+            *dst++ = 16 * a + b;
+            src += 3;
+        } else if (*src == '+') {
+            *dst++ = ' ';
+            src++;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst++ = '\0';
 }
 
 #endif // _NOSDK_UTIL_H

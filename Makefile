@@ -1,6 +1,6 @@
 SOURCES = main.c io.c process.c kafka.c config.c http.c postgres.c
-HEADERS = io.h kafka.h process.h config.h http.h postgres.h
-CFLAGS = -Wall -g
+HEADERS = io.h kafka.h process.h config.h http.h postgres.h util.h
+CFLAGS = -Wall -g -fsanitize=address -O0 -fsanitize=undefined
 LIBS = -lrdkafka -lcyaml -lpq
 
 # macOS homebrew flags
