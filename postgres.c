@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <libpq-fe.h>
 #include <pthread.h>
 #include <stdarg.h>
@@ -133,6 +134,7 @@ char *get_table_name(struct nosdk_http_request *req) {
     int len = strlen(name);
 
     for (int i = 0; i < len; i++) {
+        name[i] = tolower(name[i]);
         if (name[i] == '?') {
             name[i] = '\0';
         }
@@ -160,47 +162,18 @@ int nosdk_pg_insert_item(PGconn *conn, char *table_name, char *item) {
     return 0;
 }
 
-struct json_array_iter {
-    char *data;
-    int data_len;
-    int pos;
-};
-
-int json_array_next_item(
-    struct json_array_iter *iter, int *start_pos, int *len) {
-    int start = 0;
-    int end = 0;
-    int depth = 0;
-
-    while (end == 0 && iter->pos < iter->data_len) {
-        char this_char = iter->data[iter->pos];
-
-        if (this_char == '{') {
-            start = iter->pos;
-            depth++;
-        } else if (this_char == '}') {
-            depth--;
-        }
-
-        iter->pos++;
-
-        if (start != 0 && depth == 0) {
-            end = iter->pos;
-            break;
-        }
+char *get_operator(char c) {
+    switch (c) {
+    case '=':
+        return "=";
+    case '<':
+        return "<";
+    case '>':
+        return ">";
+    case '!':
+        return "!=";
     }
-
-    *start_pos = start;
-    *len = (end - start);
-
-    return start;
-}
-
-int is_operator(char c) {
-    if (c == '=' || c == '<' || c == '>') {
-        return 1;
-    }
-    return 0;
+    return NULL;
 }
 
 char *val2pgtype(char *val) {
@@ -233,18 +206,18 @@ int translate_query_string(
 
     char key[64];
     char val[64];
-    char operator;
+    char *operator;
 
     int n_clauses = 0;
 
     for (int i = 1; i < len; i++) {
         char this_char = query[i];
 
-        if (in_key && !is_operator(this_char)) {
+        if (in_key && !get_operator(this_char)) {
             key[key_len] = this_char;
             key_len++;
-        } else if (in_key && is_operator(this_char)) {
-            operator = this_char;
+        } else if (in_key && get_operator(this_char)) {
+            operator = get_operator(this_char);
             in_key = 0;
         } else if (!in_key && this_char != '&') {
             val[val_len] = this_char;
@@ -261,7 +234,7 @@ int translate_query_string(
             paramValues[n_clauses] = strdup(val);
             n_clauses++;
             nosdk_string_buffer_append(
-                sb, " %s (data->>'%.*s')::%s %c $%d", word, key_len, key,
+                sb, " %s (data->>'%.*s')::%s %s $%d", word, key_len, key,
                 val2pgtype(val), operator, n_clauses);
 
             key_len = 0;
@@ -278,6 +251,7 @@ void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
 
     char *table_name = get_table_name(req);
     if (!table_exists(conn, table_name)) {
+        nosdk_debugf("creating table %s\n", table_name);
         if (create_table_jsonb(conn, table_name) != 0) {
             char *response = "HTTP/1.1 500 Internal Error";
             write(req->client_fd, response, strlen(response));

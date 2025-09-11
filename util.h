@@ -94,4 +94,16 @@ static inline void urldecode2(char *dst, const char *src) {
     *dst++ = '\0';
 }
 
+// an iterator that can be used to step through JSON array bytes
+// and retrieve the start index and length of each object within
+// the array
+struct json_array_iter {
+    char *data;
+    int data_len;
+    int pos;
+};
+
+int json_array_next_item(
+    struct json_array_iter *iter, int *start_pos, int *len);
+
 #endif // _NOSDK_UTIL_H
