@@ -369,7 +369,7 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
     struct nosdk_string_buffer *qbuf = nosdk_string_buffer_new();
     struct nosdk_string_buffer *sb = nosdk_string_buffer_new();
 
-    nosdk_string_buffer_append(qbuf, "SELECT data FROM %s", table_name);
+    nosdk_string_buffer_append(qbuf, "SELECT data, id FROM %s", table_name);
 
     char *qstr = strstr(req->path, "?");
     if (qstr != NULL) {
@@ -393,7 +393,13 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
     nosdk_string_buffer_append(sb, "[");
     for (int i = 0; i < PQntuples(res); i++) {
         char *data = PQgetvalue(res, i, 0);
-        nosdk_string_buffer_append(sb, data);
+        if (json_extract_key(data, "id") != NULL) {
+            nosdk_string_buffer_append(sb, data);
+        } else {
+            char *id = PQgetvalue(res, i, 1);
+            nosdk_string_buffer_append(sb, "{\"id\": %s,", id);
+            nosdk_string_buffer_append(sb, &data[1]);
+        }
         if (i < PQntuples(res) - 1) {
             nosdk_string_buffer_append(sb, ",");
         }

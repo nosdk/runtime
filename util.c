@@ -42,12 +42,11 @@ char *json_extract_key(char *buf, char *key) {
     char cur_str[64];
     int cur_str_pos = 0;
 
-    bool in_string = false;
     int brace_depth = 0;
     int bracket_depth = 0;
     bool found_key = false;
 
-    for (int i = 0; i < (strlen(buf) - strlen(key) - 4); i++) {
+    for (int i = 0; i < strlen(buf); i++) {
         char this_char = buf[i];
 
         if (this_char == '{')
@@ -59,12 +58,10 @@ char *json_extract_key(char *buf, char *key) {
         if (this_char == ']')
             bracket_depth--;
 
-        if (brace_depth == 1 && bracket_depth == 0) {
+        if (brace_depth < 2 && bracket_depth == 0) {
             // top level
-            if (this_char == '"' && !in_string) {
-                in_string = true;
-            } else if (this_char == '"' && in_string) {
-                in_string = false;
+
+            if (this_char == ':' || this_char == ',' || this_char == '}') {
                 cur_str[cur_str_pos] = '\0';
 
                 if (found_key) {
@@ -76,7 +73,9 @@ char *json_extract_key(char *buf, char *key) {
                 }
 
                 cur_str_pos = 0;
-            } else if (in_string) {
+            } else if (
+                this_char != '"' && this_char != '{' && this_char != '}' &&
+                this_char != ',' && this_char != ' ') {
                 if (cur_str_pos < 63) {
                     cur_str[cur_str_pos] = this_char;
                 }
