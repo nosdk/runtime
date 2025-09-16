@@ -108,14 +108,25 @@ int table_exists(PGconn *conn, const char *table_name) {
     return exists;
 }
 
-int create_table_jsonb(PGconn *conn, const char *table_name) {
+int create_table_jsonb(
+    PGconn *conn, const char *table_name, const char *id_type) {
     char query[256];
-    snprintf(
-        query, sizeof(query),
-        ("CREATE TABLE %s ("
-         "id SERIAL PRIMARY KEY,"
-         "data JSONB NOT NULL)"),
-        table_name);
+
+    if (id_type == NULL) {
+        snprintf(
+            query, sizeof(query),
+            ("CREATE TABLE %s ("
+             "id SERIAL PRIMARY KEY,"
+             "data JSONB NOT NULL)"),
+            table_name);
+    } else {
+        snprintf(
+            query, sizeof(query),
+            ("CREATE TABLE %s ("
+             "id VARCHAR(64) PRIMARY KEY,"
+             "data JSONB NOT NULL)"),
+            table_name);
+    }
 
     PGresult *res = PQexec(conn, query);
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
@@ -142,23 +153,88 @@ char *get_table_name(struct nosdk_http_request *req) {
     return name;
 }
 
+int create_table_for_item(PGconn *conn, char *table_name, char *item) {
+    char *id_val = json_extract_key(item, "id");
+
+    if (!table_exists(conn, table_name)) {
+        if (id_val == NULL) {
+            free(id_val);
+            return create_table_jsonb(conn, table_name, NULL);
+        } else {
+            free(id_val);
+            return create_table_jsonb(conn, table_name, "string");
+        }
+    }
+    free(id_val);
+    return 0;
+}
+
 int nosdk_pg_insert_item(PGconn *conn, char *table_name, char *item) {
-    const char *paramValues[1] = {item};
+    const char *paramValues[2] = {item, NULL};
     char query[128];
+    PGresult *res;
 
-    snprintf(
-        query, sizeof(query), "INSERT INTO %s (data) VALUES ($1::jsonb)",
-        table_name);
+    if (create_table_for_item(conn, table_name, item) != 0) {
+        return -1;
+    }
 
-    PGresult *res =
-        PQexecParams(conn, query, 1, NULL, paramValues, NULL, NULL, 0);
+    char *id_value = json_extract_key(item, "id");
+    if (id_value == NULL) {
+
+        snprintf(
+            query, sizeof(query), "INSERT INTO %s (data) VALUES ($1::jsonb)",
+            table_name);
+
+        res = PQexecParams(conn, query, 1, NULL, paramValues, NULL, NULL, 0);
+
+    } else {
+        paramValues[1] = id_value;
+
+        snprintf(
+            query, sizeof(query),
+            "INSERT INTO %s (id, data) VALUES ($2, $1::jsonb)", table_name);
+
+        res = PQexecParams(conn, query, 2, NULL, paramValues, NULL, NULL, 0);
+    }
 
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {
         fprintf(stderr, "insert failed: %s\n", PQerrorMessage(conn));
+        PQclear(res);
+        free(id_value);
         return -1;
     }
 
     PQclear(res);
+    free(id_value);
+    return 0;
+}
+
+int nosdk_pg_update_item(PGconn *conn, char *table_name, char *item) {
+    const char *paramValues[2] = {item, NULL};
+    char query[128];
+
+    char *id_value = json_extract_key(item, "id");
+    if (id_value == NULL) {
+        return -1;
+    }
+    paramValues[1] = id_value;
+
+    snprintf(
+        query, sizeof(query), "UPDATE %s SET data = $1::jsonb WHERE id = $2",
+        table_name);
+
+    PGresult *res =
+        PQexecParams(conn, query, 2, NULL, paramValues, NULL, NULL, 0);
+
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        fprintf(stderr, "insert failed: %s\n", PQerrorMessage(conn));
+        PQclear(res);
+        free(id_value);
+        return -1;
+    }
+
+    PQclear(res);
+    free(id_value);
     return 0;
 }
 
@@ -250,14 +326,6 @@ void nosdk_pg_handle_post(struct nosdk_http_request *req, PGconn *conn) {
     char *data = nosdk_http_request_body_alloc(req);
 
     char *table_name = get_table_name(req);
-    if (!table_exists(conn, table_name)) {
-        nosdk_debugf("creating table %s\n", table_name);
-        if (create_table_jsonb(conn, table_name) != 0) {
-            char *response = "HTTP/1.1 500 Internal Error";
-            write(req->client_fd, response, strlen(response));
-            return;
-        }
-    }
 
     if (data[0] == '{') {
         if (nosdk_pg_insert_item(conn, table_name, data) != 0) {
@@ -340,6 +408,21 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
     nosdk_string_buffer_free(qbuf);
 }
 
+void nosdk_pg_handle_put(struct nosdk_http_request *req, PGconn *conn) {
+    char *data = nosdk_http_request_body_alloc(req);
+
+    char *table_name = get_table_name(req);
+
+    int ret = nosdk_pg_update_item(conn, table_name, data);
+    if (ret != 0) {
+        nosdk_http_respond(
+            req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
+        return;
+    }
+
+    nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
+}
+
 void nosdk_pg_handler(struct nosdk_http_request *req) {
     nosdk_pg_init();
 
@@ -354,6 +437,8 @@ void nosdk_pg_handler(struct nosdk_http_request *req) {
         nosdk_pg_handle_post(req, conn);
     } else if (req->method == HTTP_METHOD_GET) {
         nosdk_pg_handle_get(req, conn);
+    } else if (req->method == HTTP_METHOD_PUT) {
+        nosdk_pg_handle_put(req, conn);
     } else {
         char *response = "HTTP/1.1 404 Not Found";
         write(req->client_fd, response, strlen(response));

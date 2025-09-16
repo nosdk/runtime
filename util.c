@@ -37,3 +37,53 @@ int json_array_next_item(
 
     return start;
 }
+
+char *json_extract_key(char *buf, char *key) {
+    char cur_str[64];
+    int cur_str_pos = 0;
+
+    bool in_string = false;
+    int brace_depth = 0;
+    int bracket_depth = 0;
+    bool found_key = false;
+
+    for (int i = 0; i < (strlen(buf) - strlen(key) - 4); i++) {
+        char this_char = buf[i];
+
+        if (this_char == '{')
+            brace_depth++;
+        if (this_char == '}')
+            brace_depth--;
+        if (this_char == '[')
+            bracket_depth++;
+        if (this_char == ']')
+            bracket_depth--;
+
+        if (brace_depth == 1 && bracket_depth == 0) {
+            // top level
+            if (this_char == '"' && !in_string) {
+                in_string = true;
+            } else if (this_char == '"' && in_string) {
+                in_string = false;
+                cur_str[cur_str_pos] = '\0';
+
+                if (found_key) {
+                    return strdup(cur_str);
+                }
+
+                if (strcmp(cur_str, key) == 0) {
+                    found_key = true;
+                }
+
+                cur_str_pos = 0;
+            } else if (in_string) {
+                if (cur_str_pos < 63) {
+                    cur_str[cur_str_pos] = this_char;
+                }
+                cur_str_pos++;
+            }
+        }
+    }
+
+    return NULL;
+}

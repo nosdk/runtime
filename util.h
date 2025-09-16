@@ -3,8 +3,10 @@
 
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 extern int nosdk_debug_flag;
 
@@ -105,5 +107,10 @@ struct json_array_iter {
 
 int json_array_next_item(
     struct json_array_iter *iter, int *start_pos, int *len);
+
+// extract a string value for the given top-level string key
+// from a JSON object
+// null if the key is not present in the buffer
+char *json_extract_key(char *buf, char *key);
 
 #endif // _NOSDK_UTIL_H
