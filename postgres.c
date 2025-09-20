@@ -146,11 +146,33 @@ char *get_table_name(struct nosdk_http_request *req) {
 
     for (int i = 0; i < len; i++) {
         name[i] = tolower(name[i]);
-        if (name[i] == '?') {
+        if (name[i] == '?' || name[i] == '/') {
             name[i] = '\0';
         }
     }
     return name;
+}
+
+char *get_request_path_id(struct nosdk_http_request *req) {
+    int path_elem = 0;
+    int len = strlen(req->path);
+
+    for (int i = 0; i < len; i++) {
+        if (path_elem == 4) {
+            char *s = strdup(&req->path[i]);
+            for (int j = 0; j < strlen(s); j++) {
+                if (s[j] == '?') {
+                    s[j] = '\0';
+                }
+            }
+            return s;
+        }
+
+        if (req->path[i] == '/') {
+            path_elem++;
+        }
+    }
+    return NULL;
 }
 
 int create_table_for_item(PGconn *conn, char *table_name, char *item) {
@@ -363,6 +385,7 @@ ssize_t writestr(int client_fd, char *s) {
 
 void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
     char *table_name = get_table_name(req);
+    char *path_id = get_request_path_id(req);
     const char *paramValues[16] = {0};
     int n_params = 0;
 
@@ -372,7 +395,12 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
     nosdk_string_buffer_append(qbuf, "SELECT data, id FROM %s", table_name);
 
     char *qstr = strstr(req->path, "?");
-    if (qstr != NULL) {
+
+    if (path_id != NULL) {
+        nosdk_string_buffer_append(qbuf, " WHERE id = $1");
+        paramValues[0] = path_id;
+        n_params = 1;
+    } else if (qstr != NULL) {
         n_params = translate_query_string(qbuf, paramValues, qstr);
     }
 
@@ -390,7 +418,9 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
         return;
     }
 
-    nosdk_string_buffer_append(sb, "[");
+    if (path_id == NULL) {
+        nosdk_string_buffer_append(sb, "[");
+    }
     for (int i = 0; i < PQntuples(res); i++) {
         char *data = PQgetvalue(res, i, 0);
         if (json_extract_key(data, "id") != NULL) {
@@ -404,7 +434,9 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
             nosdk_string_buffer_append(sb, ",");
         }
     }
-    nosdk_string_buffer_append(sb, "]");
+    if (path_id == NULL) {
+        nosdk_string_buffer_append(sb, "]");
+    }
 
     PQclear(res);
 
@@ -429,6 +461,41 @@ void nosdk_pg_handle_put(struct nosdk_http_request *req, PGconn *conn) {
     nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
 }
 
+void nosdk_pg_handle_delete(struct nosdk_http_request *req, PGconn *conn) {
+    char *table_name = get_table_name(req);
+    char *path_id = get_request_path_id(req);
+    struct nosdk_string_buffer *qbuf = nosdk_string_buffer_new();
+    const char *paramValues[16] = {0};
+    int n_params = 0;
+
+    nosdk_string_buffer_append(qbuf, "DELETE FROM %s", table_name);
+
+    char *qstr = strstr(req->path, "?");
+
+    if (path_id != NULL) {
+        nosdk_string_buffer_append(qbuf, " WHERE id = $1");
+        paramValues[0] = path_id;
+        n_params = 1;
+    } else if (qstr != NULL) {
+        n_params = translate_query_string(qbuf, paramValues, qstr);
+    }
+
+    printf("delete query: %s\n", qbuf->data);
+
+    PGresult *res = PQexecParams(
+        conn, qbuf->data, n_params, NULL, paramValues, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        fprintf(stderr, "delete failed: %s", PQerrorMessage(conn));
+        nosdk_http_respond(
+            req, HTTP_STATUS_INVALID_REQUEST, "text/plain", NULL, 0);
+        nosdk_string_buffer_free(qbuf);
+        PQclear(res);
+        return;
+    }
+
+    nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
+}
+
 void nosdk_pg_handler(struct nosdk_http_request *req) {
     nosdk_pg_init();
 
@@ -445,6 +512,8 @@ void nosdk_pg_handler(struct nosdk_http_request *req) {
         nosdk_pg_handle_get(req, conn);
     } else if (req->method == HTTP_METHOD_PUT) {
         nosdk_pg_handle_put(req, conn);
+    } else if (req->method == HTTP_METHOD_DELETE) {
+        nosdk_pg_handle_delete(req, conn);
     } else {
         char *response = "HTTP/1.1 404 Not Found";
         write(req->client_fd, response, strlen(response));
