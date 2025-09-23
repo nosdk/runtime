@@ -480,8 +480,6 @@ void nosdk_pg_handle_delete(struct nosdk_http_request *req, PGconn *conn) {
         n_params = translate_query_string(qbuf, paramValues, qstr);
     }
 
-    printf("delete query: %s\n", qbuf->data);
-
     PGresult *res = PQexecParams(
         conn, qbuf->data, n_params, NULL, paramValues, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_COMMAND_OK) {

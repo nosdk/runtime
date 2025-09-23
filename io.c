@@ -14,6 +14,7 @@
 #include "http.h"
 #include "io.h"
 #include "postgres.h"
+#include "s3.h"
 #include "util.h"
 
 int nosdk_io_mgr_init(struct nosdk_io_mgr *mgr) { return 0; }
@@ -129,6 +130,19 @@ int nosdk_io_mgr_setup(
         struct nosdk_http_handler handler = {
             .prefix = "/db",
             .handler = nosdk_pg_handler,
+        };
+
+        if (nosdk_http_server_handle(ctx->server, handler) != 0) {
+            return -1;
+        }
+    } else if (spec.kind == S3) {
+        if (ctx->server == NULL) {
+            ctx->server = nosdk_http_server_new();
+        }
+
+        struct nosdk_http_handler handler = {
+            .prefix = "/blob",
+            .handler = nosdk_s3_handler,
         };
 
         if (nosdk_http_server_handle(ctx->server, handler) != 0) {

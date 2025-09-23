@@ -55,6 +55,12 @@ int config_main(char *path) {
         };
         nosdk_process_add_io(&p, s);
 
+        struct nosdk_io_spec s3 = {
+            .kind = S3,
+            .data = NULL,
+        };
+        nosdk_process_add_io(&p, s3);
+
         if (c.nproc == 0) {
             nosdk_process_mgr_add(&proc_mgr, p);
         } else {
@@ -148,6 +154,12 @@ int main(int argc, char *argv[]) {
         .data = NULL,
     };
     nosdk_process_add_io(&proc, http_spec);
+
+    struct nosdk_io_spec s3 = {
+        .kind = S3,
+        .data = NULL,
+    };
+    nosdk_process_add_io(&proc, s3);
 
     for (int i = 0; i < nproc; i++) {
         nosdk_process_mgr_add(&mgr, proc);

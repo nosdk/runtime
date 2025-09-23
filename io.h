@@ -11,6 +11,7 @@ enum nosdk_io_kind {
     KAFKA_CONSUME_TOPIC,
     KAFKA_PRODUCE_TOPIC,
     POSTGRES,
+    S3,
 };
 
 // used to request initialization and setup of IO adapters
