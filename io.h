@@ -1,7 +1,6 @@
 #ifndef _NOSDK_IO_H
 #define _NOSDK_IO_H
 
-#define MAX_KAFKA 16
 #define MAX_PROCS 100
 
 #include "http.h"
@@ -32,8 +31,6 @@ struct nosdk_io_process_ctx {
 };
 
 struct nosdk_io_mgr {
-    struct nosdk_kafka kafkas[MAX_KAFKA];
-    int num_kafkas;
     struct nosdk_io_process_ctx contexts[MAX_PROCS];
     int num_contexts;
 };

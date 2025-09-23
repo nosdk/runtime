@@ -15,6 +15,80 @@
 #include "kafka.h"
 #include "util.h"
 
+struct nosdk_kafka_mgr *kafka_mgr;
+
+int nosdk_kafka_mgr_init() {
+    if (kafka_mgr != NULL) {
+        return 0;
+    }
+
+    kafka_mgr = malloc(sizeof(struct nosdk_kafka_mgr));
+    memset(kafka_mgr, 0, sizeof(struct nosdk_kafka_mgr));
+
+    return 0;
+}
+
+int nosdk_kafka_mgr_add_kafka(
+    struct nosdk_kafka_mgr *mgr, struct nosdk_kafka k) {
+    if (mgr->num_kafkas >= MAX_KAFKA) {
+        printf("kafka process limit has been reached\n");
+        return 1;
+    }
+
+    int ret = nosdk_kafka_init(&k);
+    if (ret != 0) {
+        return ret;
+    }
+    mgr->kafkas[mgr->num_kafkas] = k;
+    mgr->num_kafkas++;
+    return 0;
+}
+
+struct nosdk_kafka *nosdk_kafka_mgr_get_consumer(char *topic) {
+
+    for (int i = 0; i < kafka_mgr->num_kafkas; i++) {
+        if (strcmp(kafka_mgr->kafkas[i].topic, topic) == 0) {
+            return &kafka_mgr->kafkas[i];
+        }
+    }
+
+    return NULL;
+}
+
+int nosdk_kafka_mgr_kafka_subscribe(char *topic) {
+    if (nosdk_kafka_mgr_get_consumer(topic) != NULL) {
+        return 0;
+    }
+
+    struct nosdk_kafka k = {
+        .type = CONSUMER,
+        .topic = strdup(topic),
+    };
+
+    return nosdk_kafka_mgr_add_kafka(kafka_mgr, k);
+}
+
+struct nosdk_kafka *nosdk_kafka_mgr_get_producer() {
+    for (int i = 0; i < kafka_mgr->num_kafkas; i++) {
+        if (kafka_mgr->kafkas[i].type == PRODUCER) {
+            return &kafka_mgr->kafkas[i];
+        }
+    }
+    return NULL;
+}
+
+int nosdk_kafka_mgr_kafka_produce(char *topic) {
+    if (nosdk_kafka_mgr_get_producer() != NULL) {
+        return 0;
+    }
+    struct nosdk_kafka k = {
+        .type = PRODUCER,
+        .topic = strdup(topic),
+    };
+
+    return nosdk_kafka_mgr_add_kafka(kafka_mgr, k);
+}
+
 void kafka_conf_must_set(
     rd_kafka_conf_t *conf, const char *property, const char *envvar) {
     char err[512];
@@ -318,4 +392,16 @@ void *nosdk_kafka_producer_thread(void *arg) {
     free(msg_buf);
     free(fifo_path);
     return NULL;
+}
+
+void nosdk_kafka_sub_handler(struct nosdk_http_request *req) {}
+
+void nosdk_kafka_mgr_teardown(struct nosdk_kafka_mgr *mgr) {
+    for (int i = 0; i < mgr->num_kafkas; i++) {
+        nosdk_debugf("destroying kafka client %d\n", i);
+        if (mgr->kafkas[i].type == PRODUCER) {
+            rd_kafka_flush(mgr->kafkas[i].rk, 500);
+        }
+        rd_kafka_destroy(mgr->kafkas[i].rk);
+    }
 }
