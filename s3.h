@@ -10,6 +10,7 @@
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
 #include <aws/io/logging.h>
+#include <aws/io/stream.h>
 #include <aws/s3/s3.h>
 #include <aws/s3/s3_client.h>
 
@@ -23,8 +24,14 @@ struct nosdk_s3_ctx {
     struct aws_s3_client *client;
     struct aws_logger logger;
     enum aws_log_level ll;
+};
+
+struct nosdk_s3_request_ctx {
+    struct nosdk_http_request *req;
     struct aws_mutex mutex;
     struct aws_condition_variable c_var;
+    int result_code;
+    int response_status;
 };
 
 void nosdk_s3_handler(struct nosdk_http_request *req);
