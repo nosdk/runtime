@@ -1,2 +1,2 @@
 CompileFlags:
-  Add: [-I/opt/homebrew/include, -I/opt/homebrew/opt/libpq/include -I/opt/homebrew/opt/aws-c-s3/include -I/opt/homebrew/opt/aws-c-common/include]
+  Add: [-I/opt/homebrew/include, -I/opt/homebrew/opt/libpq/include, -I/opt/homebrew/opt/aws-c-s3/include, -I/opt/homebrew/opt/aws-c-common/include, -I/opt/homebrew/opt/aws-c-io/include, -I/opt/homebrew/opt/aws-c-auth/include, -I/opt/homebrew/opt/aws-c-http/include]
