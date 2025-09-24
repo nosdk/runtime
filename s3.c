@@ -217,6 +217,9 @@ static void s3_put_object_finish_cb(
         printf(
             "PutObject failed with error: %s\n",
             aws_error_name(result->error_code));
+        printf(
+            "error response body: %.*s", (int)result->error_response_body->len,
+            result->error_response_body->buffer);
     } else {
         printf(
             "PutObject completed successfully, status: %d\n",
@@ -239,7 +242,6 @@ int s3_put_object(struct nosdk_s3_request_ctx *ctx) {
         message, aws_byte_cursor_from_c_str("PUT"));
 
     char *obj_path = request_obj_path(ctx->req);
-    printf("object path %s\n", obj_path);
 
     aws_http_message_set_request_path(
         message, aws_byte_cursor_from_c_str(obj_path));
@@ -304,6 +306,98 @@ int s3_put_object(struct nosdk_s3_request_ctx *ctx) {
     return result == AWS_ERROR_SUCCESS ? 0 : -1;
 }
 
+static int s3_get_object_body_cb(
+    struct aws_s3_meta_request *meta_request,
+    const struct aws_byte_cursor *body,
+    uint64_t range_start,
+    void *user_data) {
+
+    struct nosdk_s3_request_ctx *ctx = (struct nosdk_s3_request_ctx *)user_data;
+
+    nosdk_http_respond(
+        ctx->req, HTTP_STATUS_OK, "text/plain", (char *)body->ptr, body->len);
+
+    return 0;
+}
+
+static void s3_get_object_finish_cb(
+    struct aws_s3_meta_request *meta_request,
+    const struct aws_s3_meta_request_result *result,
+    void *user_data) {
+
+    struct nosdk_s3_request_ctx *ctx = (struct nosdk_s3_request_ctx *)user_data;
+
+    aws_mutex_lock(&ctx->mutex);
+    ctx->result_code = result->error_code;
+    ctx->response_status = result->response_status;
+
+    if (result->error_code != AWS_ERROR_SUCCESS) {
+        printf(
+            "GetObject failed with error: %s\n",
+            aws_error_name(result->error_code));
+        printf(
+            "error response body: %.*s", (int)result->error_response_body->len,
+            result->error_response_body->buffer);
+    } else {
+        printf(
+            "GetObject completed successfully, status: %d\n",
+            result->response_status);
+    }
+
+    aws_condition_variable_notify_one(&ctx->c_var);
+    aws_mutex_unlock(&ctx->mutex);
+}
+
+int s3_get_object(struct nosdk_s3_request_ctx *ctx) {
+    struct aws_http_message *message =
+        aws_http_message_new_request(s3_ctx->allocator);
+    if (!message) {
+        return -1;
+    }
+
+    aws_http_message_set_request_method(
+        message, aws_byte_cursor_from_c_str("GET"));
+
+    char *obj_path = request_obj_path(ctx->req);
+
+    aws_http_message_set_request_path(
+        message, aws_byte_cursor_from_c_str(obj_path));
+
+    nosdk_s3_host_header(message);
+
+    struct aws_s3_meta_request_options options = {
+        .type = AWS_S3_META_REQUEST_TYPE_DEFAULT,
+        .operation_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("GetObject"),
+        .body_callback = s3_get_object_body_cb,
+        .finish_callback = s3_get_object_finish_cb,
+        .user_data = ctx,
+        .message = message,
+    };
+
+    if (nosdk_s3_set_endpoint(&options) != 0) {
+        aws_http_message_release(message);
+        return -1;
+    }
+
+    struct aws_s3_meta_request *meta_request =
+        aws_s3_client_make_meta_request(s3_ctx->client, &options);
+
+    aws_http_message_release(message);
+
+    if (meta_request == NULL) {
+        printf("failed to make meta request\n");
+        return -1;
+    }
+
+    aws_mutex_lock(&ctx->mutex);
+    aws_condition_variable_wait(&ctx->c_var, &ctx->mutex);
+    aws_mutex_unlock(&ctx->mutex);
+
+    int result = ctx->result_code;
+
+    return result == AWS_ERROR_SUCCESS ? 0 : -1;
+}
+
 void nosdk_s3_handler(struct nosdk_http_request *req) {
     printf("blob request %s\n", req->path);
     struct nosdk_s3_request_ctx *ctx = nosdk_s3_request_ctx_new(req);
@@ -321,6 +415,11 @@ void nosdk_s3_handler(struct nosdk_http_request *req) {
                     return;
                 }
             }
+            nosdk_http_respond(
+                req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
+        }
+    } else if (req->method == HTTP_METHOD_GET) {
+        if (s3_get_object(ctx) != 0) {
             nosdk_http_respond(
                 req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
         }
