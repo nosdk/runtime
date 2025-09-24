@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "http.h"
 #include "kafka.h"
 #include "util.h"
 
@@ -90,12 +91,14 @@ int nosdk_kafka_mgr_kafka_produce(char *topic) {
 }
 
 void kafka_conf_must_set(
-    rd_kafka_conf_t *conf, const char *property, const char *envvar) {
+    rd_kafka_conf_t *conf,
+    const char *property,
+    const char *envvar,
+    char *default_value) {
     char err[512];
     char *value = getenv(envvar);
     if (value == NULL || strlen(value) == 0) {
-        fprintf(stderr, "missing environment variable: %s\n", envvar);
-        exit(1);
+        value = default_value;
     }
     int ret = rd_kafka_conf_set(conf, property, value, err, sizeof(err));
     if (ret != RD_KAFKA_CONF_OK) {
@@ -112,8 +115,9 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
     conf = rd_kafka_conf_new();
 
     kafka_conf_must_set(
-        conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS");
-    kafka_conf_must_set(conf, "group.id", "NOSDK_KAFKA_GROUP_ID");
+        conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS",
+        "0.0.0.0:19092");
+    kafka_conf_must_set(conf, "group.id", "NOSDK_KAFKA_GROUP_ID", "default");
 
     if (rd_kafka_conf_set(
             conf, "auto.offset.reset", "latest", errstr, sizeof(errstr)) !=
@@ -167,7 +171,8 @@ int nosdk_kafka_producer_init(struct nosdk_kafka *producer) {
     conf = rd_kafka_conf_new();
 
     kafka_conf_must_set(
-        conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS");
+        conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS",
+        "0.0.0.0:19092");
 
     producer->rk =
         rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
@@ -394,7 +399,98 @@ void *nosdk_kafka_producer_thread(void *arg) {
     return NULL;
 }
 
-void nosdk_kafka_sub_handler(struct nosdk_http_request *req) {}
+char *get_topic_name(struct nosdk_http_request *req) {
+    char *topic_prefix = "/sub/";
+    char *name = strdup(&req->path[strlen(topic_prefix)]);
+    int len = strlen(name);
+
+    for (int i = 0; i < len; i++) {
+        name[i] = tolower(name[i]);
+        if (name[i] == '?' || name[i] == '/') {
+            name[i] = '\0';
+        }
+    }
+    return name;
+}
+
+void nosdk_kafka_sub_handler(struct nosdk_http_request *req) {
+    char *topic_name = get_topic_name(req);
+    struct nosdk_kafka *consumer = nosdk_kafka_mgr_get_consumer(topic_name);
+    if (consumer == NULL) {
+        free(topic_name);
+        nosdk_http_respond(
+            req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
+        return;
+    }
+
+    rd_kafka_message_t *msg = rd_kafka_consumer_poll(consumer->rk, 10000);
+    if (msg == NULL) {
+        free(topic_name);
+        nosdk_http_respond(req, HTTP_STATUS_NO_CONTENT, "text/plain", NULL, 0);
+        return;
+    }
+
+    if (msg->err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+        printf("poll error: %s\n", rd_kafka_err2str(msg->err));
+        rd_kafka_message_destroy(msg);
+        free(topic_name);
+        nosdk_http_respond(
+            req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
+        return;
+    }
+
+    nosdk_http_respond(
+        req, HTTP_STATUS_OK, "application/json", (char *)msg->payload,
+        msg->len);
+
+    rd_kafka_message_destroy(msg);
+    free(topic_name);
+}
+
+void nosdk_kafka_pub_handler(struct nosdk_http_request *req) {
+    char *topic_name = get_topic_name(req);
+    struct nosdk_kafka *producer = nosdk_kafka_mgr_get_producer();
+    if (producer == NULL) {
+        free(topic_name);
+        nosdk_http_respond(
+            req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
+        return;
+    }
+
+    char *body_data = nosdk_http_request_body_alloc(req);
+
+    rd_kafka_resp_err_t resp;
+
+    resp = rd_kafka_producev(
+        producer->rk, RD_KAFKA_V_TOPIC(topic_name),
+        RD_KAFKA_V_VALUE(body_data, strlen(body_data)), RD_KAFKA_V_END);
+
+    if (resp != RD_KAFKA_RESP_ERR_NO_ERROR) {
+        const char *err = rd_kafka_err2str(resp);
+        printf("producer error: %s\n", err);
+        free(topic_name);
+        free(body_data);
+        nosdk_http_respond(
+            req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", (char *)err,
+            strlen(err));
+        return;
+    }
+
+    resp = rd_kafka_flush(producer->rk, 500);
+
+    if (resp != RD_KAFKA_RESP_ERR_NO_ERROR) {
+        const char *err = rd_kafka_err2str(resp);
+        printf("producer flush error: %s\n", err);
+        free(topic_name);
+        free(body_data);
+        nosdk_http_respond(
+            req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", (char *)err,
+            strlen(err));
+        return;
+    }
+
+    nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
+}
 
 void nosdk_kafka_mgr_teardown(struct nosdk_kafka_mgr *mgr) {
     for (int i = 0; i < mgr->num_kafkas; i++) {

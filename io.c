@@ -54,17 +54,19 @@ int nosdk_io_mgr_setup(
             return ret;
         }
 
-        kthread->k = nosdk_kafka_mgr_get_consumer(spec.data);
-        pthread_create(
-            &kthread->thread, NULL, nosdk_kafka_consumer_thread, kthread);
+        if (spec.interface == FS) {
+            kthread->k = nosdk_kafka_mgr_get_consumer(spec.data);
+            pthread_create(
+                &kthread->thread, NULL, nosdk_kafka_consumer_thread, kthread);
+        } else {
+            struct nosdk_http_handler handler = {
+                .prefix = "/sub",
+                .handler = nosdk_kafka_sub_handler,
+            };
 
-        struct nosdk_http_handler handler = {
-            .prefix = "/sub",
-            .handler = nosdk_kafka_sub_handler,
-        };
-
-        if (nosdk_http_server_handle(ctx->server, handler) != 0) {
-            return -1;
+            if (nosdk_http_server_handle(ctx->server, handler) != 0) {
+                return -1;
+            }
         }
 
         return 0;
@@ -74,9 +76,20 @@ int nosdk_io_mgr_setup(
             return ret;
         }
 
-        kthread->k = nosdk_kafka_mgr_get_producer();
-        pthread_create(
-            &kthread->thread, NULL, nosdk_kafka_producer_thread, kthread);
+        if (spec.interface == FS) {
+            kthread->k = nosdk_kafka_mgr_get_producer();
+            pthread_create(
+                &kthread->thread, NULL, nosdk_kafka_producer_thread, kthread);
+        } else {
+            struct nosdk_http_handler handler = {
+                .prefix = "/pub",
+                .handler = nosdk_kafka_pub_handler,
+            };
+
+            if (nosdk_http_server_handle(ctx->server, handler) != 0) {
+                return -1;
+            }
+        }
 
         return 0;
     } else if (spec.kind == POSTGRES) {

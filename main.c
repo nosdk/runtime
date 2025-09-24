@@ -11,8 +11,17 @@
 
 int nosdk_debug_flag = 0;
 
-int config_main(char *path) {
+struct nosdk_config *load_config(char *path) {
     struct nosdk_config *config = NULL;
+
+    if (nosdk_config_load(path, &config) != 0) {
+        return NULL;
+    }
+
+    return config;
+}
+
+int config_main(struct nosdk_config *config) {
     struct nosdk_process_mgr proc_mgr = {0};
     struct nosdk_io_mgr io_mgr = {0};
 
@@ -21,10 +30,6 @@ int config_main(char *path) {
     }
 
     proc_mgr.io_mgr = &io_mgr;
-
-    if (nosdk_config_load(path, &config) != 0) {
-        return 1;
-    }
 
     for (int i = 0; i < config->processes_count; i++) {
         struct nosdk_process_config c = config->processes[i];
@@ -36,6 +41,7 @@ int config_main(char *path) {
         for (int j = 0; j < c.consume_count; j++) {
             struct nosdk_io_spec s = {
                 .kind = KAFKA_CONSUME_TOPIC,
+                .interface = c.consume[j].interface,
                 .data = c.consume[j].topic,
             };
             nosdk_process_add_io(&p, s);
@@ -44,6 +50,7 @@ int config_main(char *path) {
         for (int j = 0; j < c.produce_count; j++) {
             struct nosdk_io_spec s = {
                 .kind = KAFKA_PRODUCE_TOPIC,
+                .interface = c.produce[j].interface,
                 .data = c.produce[j].topic,
             };
             nosdk_process_add_io(&p, s);
@@ -78,7 +85,6 @@ int config_main(char *path) {
 }
 
 int main(int argc, char *argv[]) {
-    int nproc = 1;
     char *config_path = NULL;
 
     struct nosdk_process_mgr mgr = {0};
@@ -90,9 +96,10 @@ int main(int argc, char *argv[]) {
 
     mgr.io_mgr = &io_mgr;
 
-    struct nosdk_process proc = {0};
-
-    struct nosdk_io_spec s = {0};
+    struct nosdk_process_config p_config = {0};
+    p_config.name = "cmdline";
+    p_config.consume = malloc(sizeof(struct nosdk_messaging_config) * 16);
+    p_config.produce = malloc(sizeof(struct nosdk_messaging_config) * 16);
 
     int c;
     static struct option long_options[] = {
@@ -109,20 +116,20 @@ int main(int argc, char *argv[]) {
            -1) {
         switch (c) {
         case 'c':
-            s.kind = KAFKA_CONSUME_TOPIC;
-            s.data = strdup(optarg);
-            nosdk_process_add_io(&proc, s);
+            p_config.consume[p_config.consume_count].topic = strdup(optarg);
+            p_config.consume[p_config.consume_count].interface = HTTP;
+            p_config.consume_count++;
             break;
         case 'p':
-            s.kind = KAFKA_PRODUCE_TOPIC;
-            s.data = strdup(optarg);
-            nosdk_process_add_io(&proc, s);
+            p_config.produce[p_config.produce_count].topic = strdup(optarg);
+            p_config.produce[p_config.produce_count].interface = HTTP;
+            p_config.produce_count++;
             break;
         case 'r':
-            proc.command = strdup(optarg);
+            p_config.command = strdup(optarg);
             break;
         case 'n':
-            nproc = atoi(optarg);
+            p_config.nproc = atoi(optarg);
             break;
         case 'd':
             nosdk_debug_flag = 1;
@@ -136,38 +143,19 @@ int main(int argc, char *argv[]) {
     // load config from default path if it's there and we didn't
     // get a specific run command
     if (config_path == NULL && access("nosdk.yaml", F_OK) == 0 &&
-        proc.command == NULL) {
+        p_config.command == NULL) {
         config_path = "nosdk.yaml";
     }
 
     if (config_path != NULL) {
-        return config_main(config_path);
+        struct nosdk_config *config = load_config(config_path);
+        return config_main(config);
+    } else {
+        struct nosdk_config config = {0};
+        config.processes = &p_config;
+        config.processes_count = 1;
+        return config_main(&config);
     }
-
-    if (proc.command == NULL) {
-        printf("no command specified\n");
-        exit(1);
-    }
-
-    struct nosdk_io_spec http_spec = {
-        .kind = POSTGRES,
-        .data = NULL,
-    };
-    nosdk_process_add_io(&proc, http_spec);
-
-    struct nosdk_io_spec s3 = {
-        .kind = S3,
-        .data = NULL,
-    };
-    nosdk_process_add_io(&proc, s3);
-
-    for (int i = 0; i < nproc; i++) {
-        nosdk_process_mgr_add(&mgr, proc);
-    }
-
-    nosdk_process_mgr_start(&mgr);
-
-    nosdk_io_mgr_teardown(&io_mgr);
 
     return 0;
 }

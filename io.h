@@ -1,6 +1,7 @@
 #ifndef _NOSDK_IO_H
 #define _NOSDK_IO_H
 
+#include "config.h"
 #define MAX_PROCS 100
 
 #include "http.h"
@@ -16,6 +17,7 @@ enum nosdk_io_kind {
 // used to request initialization and setup of IO adapters
 struct nosdk_io_spec {
     enum nosdk_io_kind kind;
+    enum nosdk_messaging_interface interface;
     char *data;
 };
 

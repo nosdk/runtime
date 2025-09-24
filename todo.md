@@ -1,14 +1,14 @@
-# Needed for Demo
+# Demo
 
 - Postgres
-  - [ ] support pre-existing columnar tables
-  - [x] postgres jsonb table update
+  - [x] postgres jsonb tables
 
 - Kafka
-  - [ ] http interface
+  - [x] http interface
 
 - S3
-  - [ ] http interface
+  - [x] PutObject
+  - [x] GetObject
 
 - API Gateway
   - [ ] route and process external requests
@@ -21,6 +21,16 @@
 
 - Metrics
  - [ ] Prometheus basic resource usage and processing rate
+
+# Version 1.0
+
+- Postgres
+  - [ ] support pre-existing columnar tables
+
+- S3
+  - [ ] streaming uploads
+  - [ ] list objects
+  - [ ] list buckets
 
 - Performance
   - [ ] evaluate performance vs. native clients
