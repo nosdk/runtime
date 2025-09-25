@@ -81,20 +81,13 @@ int config_main(struct nosdk_config *config) {
 
     nosdk_io_mgr_teardown(&io_mgr);
 
+    nosdk_config_destroy(config);
+
     return 0;
 }
 
 int main(int argc, char *argv[]) {
     char *config_path = NULL;
-
-    struct nosdk_process_mgr mgr = {0};
-
-    struct nosdk_io_mgr io_mgr = {0};
-    if (nosdk_io_mgr_init(&io_mgr) != 0) {
-        return 1;
-    }
-
-    mgr.io_mgr = &io_mgr;
 
     struct nosdk_process_config p_config = {0};
     p_config.name = "cmdline";
@@ -150,12 +143,16 @@ int main(int argc, char *argv[]) {
     if (config_path != NULL) {
         struct nosdk_config *config = load_config(config_path);
         return config_main(config);
-    } else {
+    } else if (p_config.command != NULL) {
         struct nosdk_config config = {0};
         config.processes = &p_config;
         config.processes_count = 1;
         return config_main(&config);
     }
 
-    return 0;
+    free(p_config.consume);
+    free(p_config.produce);
+    printf("no config file and no process specified.\n");
+
+    return 1;
 }

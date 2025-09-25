@@ -7,6 +7,7 @@
 #include "http.h"
 
 #define MAX_KAFKA 16
+#define MAX_PROCS 100
 
 enum nosdk_kafka_type {
     PRODUCER,

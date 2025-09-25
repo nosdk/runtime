@@ -28,4 +28,6 @@ struct nosdk_config {
 
 int nosdk_config_load(char *filepath, struct nosdk_config **config);
 
+void nosdk_config_destroy(struct nosdk_config *config);
+
 #endif // _NOSDK_CONFIG_H

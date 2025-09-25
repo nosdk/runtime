@@ -3,9 +3,7 @@
 #include <limits.h>
 #include <poll.h>
 #include <pthread.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -38,17 +36,17 @@ int nosdk_io_mgr_setup(
 
     int ret;
 
-    struct nosdk_kafka_thread_ctx *kthread =
-        malloc(sizeof(struct nosdk_kafka_thread_ctx));
-    kthread->root_dir = ctx->root_dir;
-    kthread->thread = 0;
-    kthread->k = NULL;
-
     if (ctx->server == NULL) {
         ctx->server = nosdk_http_server_new();
     }
 
     if (spec.kind == KAFKA_CONSUME_TOPIC) {
+        struct nosdk_kafka_thread_ctx *kthread =
+            malloc(sizeof(struct nosdk_kafka_thread_ctx));
+        kthread->root_dir = ctx->root_dir;
+        kthread->thread = 0;
+        kthread->k = NULL;
+
         ret = nosdk_kafka_mgr_kafka_subscribe(spec.data);
         if (ret != 0) {
             return ret;
@@ -71,6 +69,12 @@ int nosdk_io_mgr_setup(
 
         return 0;
     } else if (spec.kind == KAFKA_PRODUCE_TOPIC) {
+        struct nosdk_kafka_thread_ctx *kthread =
+            malloc(sizeof(struct nosdk_kafka_thread_ctx));
+        kthread->root_dir = ctx->root_dir;
+        kthread->thread = 0;
+        kthread->k = NULL;
+
         ret = nosdk_kafka_mgr_kafka_produce(spec.data);
         if (ret != 0) {
             return ret;

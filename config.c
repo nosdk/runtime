@@ -1,10 +1,11 @@
 #include <cyaml/cyaml.h>
+#include <stdlib.h>
 
 #include "config.h"
 
 static const cyaml_strval_t nosdk_messaging_interface_strings[] = {
-    { "fs", FS },
-    { "http", HTTP },
+    {"fs", FS},
+    {"http", HTTP},
 };
 
 static const cyaml_schema_field_t nosdk_messaging_config_schema[] = {
@@ -106,4 +107,12 @@ int nosdk_config_load(char *filepath, struct nosdk_config **config) {
     }
 
     return 0;
+}
+
+void nosdk_config_destroy(struct nosdk_config *config) {
+    for (int i = 0; i < config->processes_count; i++) {
+        free(config->processes[i].consume);
+        free(config->processes[i].produce);
+        free(config->processes[i].command);
+    }
 }

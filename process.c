@@ -69,7 +69,10 @@ void nosdk_process_mgr_destroy(struct nosdk_process_mgr *mgr) {
             } else {
                 waitpid(pid, NULL, 0);
             }
+            free(mgr->procs[i].ctx->root_dir);
         }
+
+        free(mgr->procs[i].output_buf);
     }
     nosdk_debugf("process manager destroy finished\n");
 }
@@ -306,6 +309,7 @@ void nosdk_process_mgr_start(struct nosdk_process_mgr *mgr) {
     }
 
     nosdk_process_mgr_destroy(mgr);
+    free(fds);
 }
 
 void nosdk_process_add_io(
