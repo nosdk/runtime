@@ -140,7 +140,7 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
         conf, "group.id", "NOSDK_KAFKA_GROUP_ID", "nosdk-default-group");
 
     if (rd_kafka_conf_set(
-            conf, "auto.offset.reset", "latest", errstr, sizeof(errstr)) !=
+            conf, "auto.offset.reset", "earliest", errstr, sizeof(errstr)) !=
         RD_KAFKA_CONF_OK) {
 
         fprintf(stderr, "config error: %s\n", errstr);
@@ -443,7 +443,10 @@ void nosdk_kafka_sub_handler(struct nosdk_http_request *req) {
         return;
     }
 
-    rd_kafka_message_t *msg = rd_kafka_consumer_poll(consumer->rk, 10000);
+    rd_kafka_message_t *msg = NULL;
+    for (int i = 0; i < 20 && msg == NULL; i++) {
+        msg = rd_kafka_consumer_poll(consumer->rk, 500);
+    }
     if (msg == NULL) {
         free(topic_name);
         nosdk_http_respond(req, HTTP_STATUS_NO_CONTENT, "text/plain", NULL, 0);
