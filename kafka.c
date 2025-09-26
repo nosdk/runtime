@@ -66,7 +66,9 @@ struct nosdk_kafka *nosdk_kafka_mgr_get_consumer(char *topic) {
 
     for (int i = 0; i < kafka_mgr->num_kafkas; i++) {
         if (strcmp(kafka_mgr->kafkas[i].topic, topic) == 0) {
-            return &kafka_mgr->kafkas[i];
+            if (kafka_mgr->kafkas[i].type == CONSUMER) {
+                return &kafka_mgr->kafkas[i];
+            }
         }
     }
 
@@ -134,7 +136,8 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
     kafka_conf_must_set(
         conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS",
         "0.0.0.0:19092");
-    kafka_conf_must_set(conf, "group.id", "NOSDK_KAFKA_GROUP_ID", "default");
+    kafka_conf_must_set(
+        conf, "group.id", "NOSDK_KAFKA_GROUP_ID", "nosdk-default-group");
 
     if (rd_kafka_conf_set(
             conf, "auto.offset.reset", "latest", errstr, sizeof(errstr)) !=
@@ -506,6 +509,8 @@ void nosdk_kafka_pub_handler(struct nosdk_http_request *req) {
         return;
     }
 
+    free(topic_name);
+    free(body_data);
     nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
 }
 

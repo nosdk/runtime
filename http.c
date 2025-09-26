@@ -1,4 +1,5 @@
 #include "http.h"
+#include "util.h"
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +19,16 @@ static const struct method_map method_table[] = {
     {"PATCH", HTTP_METHOD_PATCH},     {"TRACE", HTTP_METHOD_TRACE},
     {"CONNECT", HTTP_METHOD_CONNECT}, {NULL, HTTP_METHOD_UNKNOWN} // Sentinel
 };
+
+const char *http_method_name(struct nosdk_http_request *req) {
+    for (int i = 0; method_table[i].method != HTTP_METHOD_UNKNOWN; i++) {
+        if (method_table[i].method == req->method) {
+            return method_table[i].name;
+        }
+    }
+
+    return NULL;
+}
 
 struct status_map {
     http_status_t status;
@@ -74,6 +85,10 @@ int nosdk_http_respond(
         }
         written += result;
     }
+
+    nosdk_debugf(
+        "sent http response: %s %s %s\n", http_method_name(req), req->path,
+        status_str(status));
 
     return 0;
 }
@@ -293,6 +308,9 @@ int nosdk_http_handle(struct nosdk_http_server *server) {
         nosdk_http_respond_invalid(client_fd);
         return 0;
     }
+
+    nosdk_debugf(
+        "received http request: %s %s\n", http_method_name(req), req->path);
 
     for (int i = 0; i < server->num_handlers; i++) {
         struct nosdk_http_handler *handler = &server->handlers[i];
