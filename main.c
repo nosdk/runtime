@@ -141,6 +141,8 @@ int main(int argc, char *argv[]) {
     }
 
     if (config_path != NULL) {
+        free(p_config.consume);
+        free(p_config.produce);
         struct nosdk_config *config = load_config(config_path);
         return config_main(config);
     } else if (p_config.command != NULL) {

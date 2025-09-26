@@ -3,7 +3,6 @@
 #include <limits.h>
 #include <poll.h>
 #include <pthread.h>
-#include <stdlib.h>
 #include <sys/fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -11,6 +10,7 @@
 
 #include "http.h"
 #include "io.h"
+#include "kafka.h"
 #include "postgres.h"
 #include "s3.h"
 
@@ -41,18 +41,14 @@ int nosdk_io_mgr_setup(
     }
 
     if (spec.kind == KAFKA_CONSUME_TOPIC) {
-        struct nosdk_kafka_thread_ctx *kthread =
-            malloc(sizeof(struct nosdk_kafka_thread_ctx));
-        kthread->root_dir = ctx->root_dir;
-        kthread->thread = 0;
-        kthread->k = NULL;
-
         ret = nosdk_kafka_mgr_kafka_subscribe(spec.data);
         if (ret != 0) {
             return ret;
         }
 
         if (spec.interface == FS) {
+            struct nosdk_kafka_thread_ctx *kthread =
+                nosdk_kafka_mgr_make_thread(ctx->root_dir);
             kthread->k = nosdk_kafka_mgr_get_consumer(spec.data);
             pthread_create(
                 &kthread->thread, NULL, nosdk_kafka_consumer_thread, kthread);
@@ -69,11 +65,6 @@ int nosdk_io_mgr_setup(
 
         return 0;
     } else if (spec.kind == KAFKA_PRODUCE_TOPIC) {
-        struct nosdk_kafka_thread_ctx *kthread =
-            malloc(sizeof(struct nosdk_kafka_thread_ctx));
-        kthread->root_dir = ctx->root_dir;
-        kthread->thread = 0;
-        kthread->k = NULL;
 
         ret = nosdk_kafka_mgr_kafka_produce(spec.data);
         if (ret != 0) {
@@ -81,6 +72,8 @@ int nosdk_io_mgr_setup(
         }
 
         if (spec.interface == FS) {
+            struct nosdk_kafka_thread_ctx *kthread =
+                nosdk_kafka_mgr_make_thread(ctx->root_dir);
             kthread->k = nosdk_kafka_mgr_get_producer();
             pthread_create(
                 &kthread->thread, NULL, nosdk_kafka_producer_thread, kthread);
@@ -139,8 +132,8 @@ void nosdk_io_mgr_start(struct nosdk_io_mgr *mgr) {
 void nosdk_io_mgr_teardown(struct nosdk_io_mgr *mgr) {
 
     for (int i = 0; i < mgr->num_contexts; i++) {
-        if (mgr->contexts[i].server->socket_fd != 0) {
-            close(mgr->contexts[i].server->socket_fd);
-        }
+        nosdk_http_server_destroy(mgr->contexts[i].server);
     }
+
+    nosdk_kafka_mgr_teardown();
 }

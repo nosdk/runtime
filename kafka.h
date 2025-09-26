@@ -29,11 +29,15 @@ struct nosdk_kafka_thread_ctx {
 struct nosdk_kafka_mgr {
     struct nosdk_kafka kafkas[MAX_KAFKA];
     int num_kafkas;
+    struct nosdk_kafka_thread_ctx *threads[MAX_PROCS];
+    int num_threads;
 };
 
 int nosdk_kafka_mgr_init();
 
 int nosdk_kafka_init(struct nosdk_kafka *k);
+
+struct nosdk_kafka_thread_ctx *nosdk_kafka_mgr_make_thread(char *root_dir);
 
 // write the message headers to a regular file at path <filepath>.headers
 int nosdk_kafka_write_headers(rd_kafka_message_t *msg, char *filepath);
@@ -53,5 +57,7 @@ struct nosdk_kafka *nosdk_kafka_mgr_get_producer();
 void nosdk_kafka_sub_handler(struct nosdk_http_request *req);
 
 void nosdk_kafka_pub_handler(struct nosdk_http_request *req);
+
+void nosdk_kafka_mgr_teardown();
 
 #endif // _NOSDK_KAFKA_H

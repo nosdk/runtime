@@ -322,3 +322,9 @@ int nosdk_http_server_start(struct nosdk_http_server *server) {
 
     return 0;
 }
+
+void nosdk_http_server_destroy(struct nosdk_http_server *server) {
+    close(server->socket_fd);
+    free(server->header_buf);
+    free(server);
+}

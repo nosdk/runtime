@@ -110,9 +110,7 @@ int nosdk_config_load(char *filepath, struct nosdk_config **config) {
 }
 
 void nosdk_config_destroy(struct nosdk_config *config) {
-    for (int i = 0; i < config->processes_count; i++) {
-        free(config->processes[i].consume);
-        free(config->processes[i].produce);
-        free(config->processes[i].command);
-    }
+    cyaml_free(
+        &cyaml_config, &nosdk_config_schema_value, config,
+        config->processes_count);
 }

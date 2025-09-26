@@ -68,4 +68,6 @@ int nosdk_http_server_handle(
 
 int nosdk_http_server_start(struct nosdk_http_server *server);
 
+void nosdk_http_server_destroy(struct nosdk_http_server *server);
+
 #endif // _NOSDK_HTTP_H

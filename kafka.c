@@ -45,6 +45,23 @@ int nosdk_kafka_mgr_add_kafka(
     return 0;
 }
 
+struct nosdk_kafka_thread_ctx *nosdk_kafka_mgr_make_thread(char *root_dir) {
+    if (kafka_mgr->num_threads >= MAX_PROCS) {
+        return NULL;
+    }
+
+    struct nosdk_kafka_thread_ctx *kthread =
+        malloc(sizeof(struct nosdk_kafka_thread_ctx));
+    kthread->root_dir = root_dir;
+    kthread->thread = 0;
+    kthread->k = NULL;
+
+    kafka_mgr->threads[kafka_mgr->num_threads] = kthread;
+    kafka_mgr->num_threads++;
+
+    return kthread;
+}
+
 struct nosdk_kafka *nosdk_kafka_mgr_get_consumer(char *topic) {
 
     for (int i = 0; i < kafka_mgr->num_kafkas; i++) {
@@ -492,12 +509,16 @@ void nosdk_kafka_pub_handler(struct nosdk_http_request *req) {
     nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
 }
 
-void nosdk_kafka_mgr_teardown(struct nosdk_kafka_mgr *mgr) {
-    for (int i = 0; i < mgr->num_kafkas; i++) {
+void nosdk_kafka_mgr_teardown() {
+    for (int i = 0; i < kafka_mgr->num_kafkas; i++) {
         nosdk_debugf("destroying kafka client %d\n", i);
-        if (mgr->kafkas[i].type == PRODUCER) {
-            rd_kafka_flush(mgr->kafkas[i].rk, 500);
+        if (kafka_mgr->kafkas[i].type == PRODUCER) {
+            rd_kafka_flush(kafka_mgr->kafkas[i].rk, 500);
         }
-        rd_kafka_destroy(mgr->kafkas[i].rk);
+        rd_kafka_destroy(kafka_mgr->kafkas[i].rk);
+    }
+
+    for (int i = 0; i < kafka_mgr->num_threads; i++) {
+        free(kafka_mgr->threads[i]);
     }
 }
