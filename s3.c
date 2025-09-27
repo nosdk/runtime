@@ -3,6 +3,8 @@
 #include "util.h"
 #include <aws/auth/auth.h>
 #include <aws/common/common.h>
+#include <aws/common/condition_variable.h>
+#include <aws/common/mutex.h>
 #include <aws/http/http.h>
 #include <aws/io/io.h>
 #include <aws/s3/s3_buffer_pool.h>
@@ -36,21 +38,21 @@ void s3_init() {
     aws_logger_set(&s3_ctx->logger);
 
     // event loop
-    struct aws_event_loop_group *event_loop_group =
+    s3_ctx->event_loop_group =
         aws_event_loop_group_new_default(s3_ctx->allocator, 0, NULL);
 
     // resolver
     struct aws_host_resolver_default_options resolver_options = {
-        .el_group = event_loop_group,
+        .el_group = s3_ctx->event_loop_group,
         .max_entries = 8,
     };
-    struct aws_host_resolver *resolver =
+    s3_ctx->resolver =
         aws_host_resolver_new_default(s3_ctx->allocator, &resolver_options);
 
     // client bootstrap
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = event_loop_group,
-        .host_resolver = resolver,
+        .event_loop_group = s3_ctx->event_loop_group,
+        .host_resolver = s3_ctx->resolver,
     };
 
     s3_ctx->client_config.client_bootstrap =
@@ -91,11 +93,45 @@ void s3_init() {
 }
 
 void s3_deinit() {
-    // aws_common_library_clean_up();
-    //  aws_io_library_clean_up();
-    // aws_http_library_clean_up();
-    // aws_auth_library_clean_up();
-    // aws_s3_library_clean_up();
+    if (s3_ctx == NULL) {
+        return;
+    }
+
+    if (s3_ctx->client) {
+        aws_s3_client_release(s3_ctx->client);
+        s3_ctx->client = NULL;
+    }
+
+    if (s3_ctx->credentials_provider) {
+        aws_credentials_provider_release(s3_ctx->credentials_provider);
+        s3_ctx->credentials_provider = NULL;
+    }
+
+    if (s3_ctx->client_config.client_bootstrap) {
+        aws_client_bootstrap_release(s3_ctx->client_config.client_bootstrap);
+        s3_ctx->client_config.client_bootstrap = NULL;
+    }
+
+    if (s3_ctx->resolver) {
+        aws_host_resolver_release(s3_ctx->resolver);
+        s3_ctx->resolver = NULL;
+    }
+
+    if (s3_ctx->event_loop_group) {
+        aws_event_loop_group_release(s3_ctx->event_loop_group);
+        s3_ctx->event_loop_group = NULL;
+    }
+
+    aws_logger_clean_up(&s3_ctx->logger);
+
+    aws_s3_library_clean_up();
+    aws_auth_library_clean_up();
+    aws_http_library_clean_up();
+    aws_io_library_clean_up();
+    aws_common_library_clean_up();
+
+    free(s3_ctx);
+    s3_ctx = NULL;
 }
 
 struct nosdk_s3_request_ctx *
@@ -431,29 +467,30 @@ void nosdk_s3_handler(struct nosdk_http_request *req) {
 
     if (req->method == HTTP_METHOD_PUT) {
         if (s3_put_object(ctx) == 0) {
-            free(ctx);
+            nosdk_s3_request_ctx_free(ctx);
             nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
         } else {
             if (ctx->response_status == 404) {
                 // attempt to create bucket
                 char *bucket_name = get_bucket_name(req);
                 if (s3_create_bucket(ctx, bucket_name) == 0) {
-                    free(ctx);
+                    nosdk_s3_request_ctx_free(ctx);
                     nosdk_s3_handler(req);
                     return;
                 }
             }
+            nosdk_s3_request_ctx_free(ctx);
             nosdk_http_respond(
                 req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
         }
     } else if (req->method == HTTP_METHOD_GET) {
         if (s3_get_object(ctx) != 0) {
-            free(ctx);
             nosdk_http_respond(
                 req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
         }
+        nosdk_s3_request_ctx_free(ctx);
     } else {
-        free(ctx);
+        nosdk_s3_request_ctx_free(ctx);
         nosdk_http_respond(req, HTTP_STATUS_NOT_FOUND, "text/plain", NULL, 0);
     }
 }

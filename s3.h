@@ -24,6 +24,8 @@ struct nosdk_s3_ctx {
     struct aws_s3_client *client;
     struct aws_logger logger;
     enum aws_log_level ll;
+    struct aws_event_loop_group *event_loop_group;
+    struct aws_host_resolver *resolver;
 };
 
 struct nosdk_s3_request_ctx {
