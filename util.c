@@ -86,3 +86,11 @@ char *json_extract_key(char *buf, char *key) {
 
     return NULL;
 }
+
+// TODO: this should not need to allocate
+bool json_has_key(char *buf, char *key) {
+    char *value = json_extract_key(buf, key);
+    bool has = value == NULL ? false : true;
+    free(value);
+    return has;
+}

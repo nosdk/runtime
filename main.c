@@ -144,6 +144,10 @@ int main(int argc, char *argv[]) {
         free(p_config.consume);
         free(p_config.produce);
         struct nosdk_config *config = load_config(config_path);
+        if (config == NULL) {
+            printf("failed to parsed config file: %s\n", config_path);
+            exit(1);
+        }
         return config_main(config);
     } else if (p_config.command != NULL) {
         struct nosdk_config config = {0};

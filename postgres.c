@@ -410,6 +410,8 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
         conn, qbuf->data, n_params, NULL, paramValues, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         fprintf(stderr, "select failed: %s", PQerrorMessage(conn));
+        free(table_name);
+        free(path_id);
         nosdk_http_respond(
             req, HTTP_STATUS_INVALID_REQUEST, "text/plain", NULL, 0);
         nosdk_string_buffer_free(sb);
@@ -418,12 +420,25 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
         return;
     }
 
+    // return string "null" with status 204 (no content) so JSON parsing won't
+    // fail, but client gets a sensible value for empty response
+    if (PQntuples(res) == 0) {
+        free(table_name);
+        free(path_id);
+        nosdk_string_buffer_free(sb);
+        nosdk_string_buffer_free(qbuf);
+        PQclear(res);
+        nosdk_http_respond(
+            req, HTTP_STATUS_NO_CONTENT, "application/json", "null", 4);
+        return;
+    }
+
     if (path_id == NULL) {
         nosdk_string_buffer_append(sb, "[");
     }
     for (int i = 0; i < PQntuples(res); i++) {
         char *data = PQgetvalue(res, i, 0);
-        if (json_extract_key(data, "id") != NULL) {
+        if (json_has_key(data, "id")) {
             nosdk_string_buffer_append(sb, data);
         } else {
             char *id = PQgetvalue(res, i, 1);
@@ -440,6 +455,8 @@ void nosdk_pg_handle_get(struct nosdk_http_request *req, PGconn *conn) {
 
     PQclear(res);
 
+    free(table_name);
+    free(path_id);
     nosdk_http_respond(
         req, HTTP_STATUS_OK, "application/json", sb->data, sb->size);
     nosdk_string_buffer_free(sb);

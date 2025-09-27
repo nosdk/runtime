@@ -169,9 +169,9 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
         return -1;
     }
 
-    printf(
-        "partition %d, offset is %" PRId64 "\n", partition->partition,
-        partition->offset);
+    nosdk_debugf(
+        "topic: %s partition: %d, offset: %" PRId64 "\n", consumer->topic,
+        partition->partition, partition->offset);
 
     rd_kafka_resp_err_t err = rd_kafka_subscribe(consumer->rk, subscription);
     if (err) {
@@ -181,6 +181,7 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
         return 1;
     }
 
+    rd_kafka_topic_partition_list_destroy(subscription);
     return 0;
 }
 
@@ -449,7 +450,10 @@ void nosdk_kafka_sub_handler(struct nosdk_http_request *req) {
     }
     if (msg == NULL) {
         free(topic_name);
-        nosdk_http_respond(req, HTTP_STATUS_NO_CONTENT, "text/plain", NULL, 0);
+        char *body = "null";
+        nosdk_http_respond(
+            req, HTTP_STATUS_NO_CONTENT, "application/json", body,
+            strlen(body));
         return;
     }
 

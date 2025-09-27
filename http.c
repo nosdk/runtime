@@ -37,6 +37,7 @@ struct status_map {
 
 static const struct status_map status_table[] = {
     {HTTP_STATUS_OK, "OK"},
+    {HTTP_STATUS_NO_CONTENT, "No Content"},
     {HTTP_STATUS_INVALID_REQUEST, "Invalid Request"},
     {HTTP_STATUS_NOT_FOUND, "Not Found"},
     {HTTP_STATUS_INTERNAL_ERROR, "Internal Server Error"},

@@ -144,7 +144,7 @@ char *nosdk_process_mgr_mkenv(
 int nosdk_process_start(
     struct nosdk_process_mgr *mgr, struct nosdk_process *proc) {
 
-    printf("starting process: %s\n", proc->command);
+    nosdk_debugf("starting process: %s\n", proc->command);
     int stdout_pipe[2], stderr_pipe[2];
 
     if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0) {

@@ -113,4 +113,6 @@ int json_array_next_item(
 // null if the key is not present in the buffer
 char *json_extract_key(char *buf, char *key);
 
+bool json_has_key(char *buf, char *key);
+
 #endif // _NOSDK_UTIL_H
