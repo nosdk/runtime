@@ -1,5 +1,12 @@
 #include "s3.h"
 #include "http.h"
+#include "util.h"
+#include <aws/auth/auth.h>
+#include <aws/common/common.h>
+#include <aws/http/http.h>
+#include <aws/io/io.h>
+#include <aws/s3/s3_buffer_pool.h>
+#include <aws/s3/s3_client.h>
 #include <stdlib.h>
 
 struct nosdk_s3_ctx *s3_ctx;
@@ -83,7 +90,13 @@ void s3_init() {
         aws_s3_client_new(s3_ctx->allocator, &s3_ctx->client_config);
 }
 
-void s3_deinit() { aws_s3_library_clean_up(); }
+void s3_deinit() {
+    // aws_common_library_clean_up();
+    //  aws_io_library_clean_up();
+    // aws_http_library_clean_up();
+    // aws_auth_library_clean_up();
+    // aws_s3_library_clean_up();
+}
 
 struct nosdk_s3_request_ctx *
 nosdk_s3_request_ctx_new(struct nosdk_http_request *req) {
@@ -126,7 +139,7 @@ void nosdk_s3_host_header(struct aws_http_message *message) {
     aws_http_message_add_header(message, host_header);
 }
 
-int nosdk_s3_set_endpoint(struct aws_s3_meta_request_options *options) {
+struct aws_uri *nosdk_s3_endpoint() {
     struct aws_uri *endpoint_uri =
         aws_mem_calloc(s3_ctx->allocator, 1, sizeof(struct aws_uri));
     struct aws_byte_cursor endpoint_cursor =
@@ -136,11 +149,10 @@ int nosdk_s3_set_endpoint(struct aws_s3_meta_request_options *options) {
         AWS_OP_SUCCESS) {
         printf("Failed to parse endpoint URI\n");
         aws_mem_release(s3_ctx->allocator, endpoint_uri);
-        return -1;
+        return NULL;
     }
 
-    options->endpoint = endpoint_uri;
-    return 0;
+    return endpoint_uri;
 }
 
 int s3_create_bucket(struct nosdk_s3_request_ctx *ctx, char *bucket_name) {
@@ -168,7 +180,8 @@ int s3_create_bucket(struct nosdk_s3_request_ctx *ctx, char *bucket_name) {
         .message = message,
     };
 
-    nosdk_s3_set_endpoint(&options);
+    struct aws_uri *endpoint = nosdk_s3_endpoint();
+    options.endpoint = endpoint;
 
     struct aws_s3_meta_request *req =
         aws_s3_client_make_meta_request(s3_ctx->client, &options);
@@ -182,6 +195,7 @@ int s3_create_bucket(struct nosdk_s3_request_ctx *ctx, char *bucket_name) {
     aws_mutex_lock(&ctx->mutex);
     aws_condition_variable_wait(&ctx->c_var, &ctx->mutex);
     aws_mutex_unlock(&ctx->mutex);
+    aws_uri_clean_up(endpoint);
 
     return ctx->result_code == AWS_ERROR_SUCCESS ? 0 : 1;
 }
@@ -221,7 +235,7 @@ static void s3_put_object_finish_cb(
             "error response body: %.*s", (int)result->error_response_body->len,
             result->error_response_body->buffer);
     } else {
-        printf(
+        nosdk_debugf(
             "PutObject completed successfully, status: %d\n",
             result->response_status);
     }
@@ -279,18 +293,20 @@ int s3_put_object(struct nosdk_s3_request_ctx *ctx) {
         .message = message,
     };
 
-    if (nosdk_s3_set_endpoint(&options) != 0) {
+    struct aws_uri *endpoint = nosdk_s3_endpoint();
+    if (endpoint == NULL) {
         free(body_data);
         aws_input_stream_release(input_stream);
         aws_http_message_release(message);
         return -1;
     }
 
+    options.endpoint = endpoint;
+
     struct aws_s3_meta_request *meta_request =
         aws_s3_client_make_meta_request(s3_ctx->client, &options);
 
     aws_input_stream_release(input_stream);
-    aws_http_message_release(message);
 
     if (meta_request == NULL) {
         printf("failed to make meta request\n");
@@ -302,6 +318,12 @@ int s3_put_object(struct nosdk_s3_request_ctx *ctx) {
     aws_mutex_unlock(&ctx->mutex);
 
     int result = ctx->result_code;
+
+    aws_uri_clean_up(endpoint);
+    aws_mem_release(s3_ctx->allocator, endpoint);
+    aws_s3_meta_request_release(meta_request);
+    aws_http_message_release(message);
+    free(body_data);
 
     return result == AWS_ERROR_SUCCESS ? 0 : -1;
 }
@@ -339,7 +361,7 @@ static void s3_get_object_finish_cb(
             "error response body: %.*s", (int)result->error_response_body->len,
             result->error_response_body->buffer);
     } else {
-        printf(
+        nosdk_debugf(
             "GetObject completed successfully, status: %d\n",
             result->response_status);
     }
@@ -374,15 +396,15 @@ int s3_get_object(struct nosdk_s3_request_ctx *ctx) {
         .message = message,
     };
 
-    if (nosdk_s3_set_endpoint(&options) != 0) {
+    struct aws_uri *endpoint = nosdk_s3_endpoint();
+    if (endpoint == NULL) {
         aws_http_message_release(message);
         return -1;
     }
+    options.endpoint = endpoint;
 
     struct aws_s3_meta_request *meta_request =
         aws_s3_client_make_meta_request(s3_ctx->client, &options);
-
-    aws_http_message_release(message);
 
     if (meta_request == NULL) {
         printf("failed to make meta request\n");
@@ -395,22 +417,28 @@ int s3_get_object(struct nosdk_s3_request_ctx *ctx) {
 
     int result = ctx->result_code;
 
+    aws_http_message_release(message);
+    aws_s3_meta_request_release(meta_request);
+    aws_uri_clean_up(endpoint);
+    aws_mem_release(s3_ctx->allocator, endpoint);
+
     return result == AWS_ERROR_SUCCESS ? 0 : -1;
 }
 
 void nosdk_s3_handler(struct nosdk_http_request *req) {
-    printf("blob request %s\n", req->path);
     struct nosdk_s3_request_ctx *ctx = nosdk_s3_request_ctx_new(req);
     s3_init();
 
     if (req->method == HTTP_METHOD_PUT) {
         if (s3_put_object(ctx) == 0) {
+            free(ctx);
             nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
         } else {
             if (ctx->response_status == 404) {
                 // attempt to create bucket
                 char *bucket_name = get_bucket_name(req);
                 if (s3_create_bucket(ctx, bucket_name) == 0) {
+                    free(ctx);
                     nosdk_s3_handler(req);
                     return;
                 }
@@ -420,10 +448,12 @@ void nosdk_s3_handler(struct nosdk_http_request *req) {
         }
     } else if (req->method == HTTP_METHOD_GET) {
         if (s3_get_object(ctx) != 0) {
+            free(ctx);
             nosdk_http_respond(
                 req, HTTP_STATUS_INTERNAL_ERROR, "text/plain", NULL, 0);
         }
     } else {
+        free(ctx);
         nosdk_http_respond(req, HTTP_STATUS_NOT_FOUND, "text/plain", NULL, 0);
     }
 }

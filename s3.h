@@ -36,4 +36,6 @@ struct nosdk_s3_request_ctx {
 
 void nosdk_s3_handler(struct nosdk_http_request *req);
 
+void s3_deinit();
+
 #endif // _NOSDK_S3

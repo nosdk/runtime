@@ -136,4 +136,5 @@ void nosdk_io_mgr_teardown(struct nosdk_io_mgr *mgr) {
     }
 
     nosdk_kafka_mgr_teardown();
+    s3_deinit();
 }
