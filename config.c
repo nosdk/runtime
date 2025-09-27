@@ -18,11 +18,11 @@ static const cyaml_schema_field_t nosdk_messaging_config_schema[] = {
         CYAML_UNLIMITED),
     CYAML_FIELD_ENUM(
         "interface",
-        CYAML_FLAG_DEFAULT,
+        CYAML_FLAG_OPTIONAL,
         struct nosdk_messaging_config,
         interface,
         nosdk_messaging_interface_strings,
-        2),
+        CYAML_ARRAY_LEN(nosdk_messaging_interface_strings)),
     CYAML_FIELD_END};
 
 static const cyaml_schema_value_t nosdk_messaging_config_schema_value = {
@@ -104,6 +104,23 @@ int nosdk_config_load(char *filepath, struct nosdk_config **config) {
         (cyaml_data_t **)config, NULL);
     if (err != CYAML_OK) {
         return -1;
+    }
+
+    // Set default interface to HTTP if not specified
+    for (unsigned i = 0; i < (*config)->processes_count; i++) {
+        struct nosdk_process_config *proc = &(*config)->processes[i];
+
+        for (unsigned j = 0; j < proc->consume_count; j++) {
+            if (proc->consume[j].interface == 0) {
+                proc->consume[j].interface = HTTP;
+            }
+        }
+
+        for (unsigned j = 0; j < proc->produce_count; j++) {
+            if (proc->produce[j].interface == 0) {
+                proc->produce[j].interface = HTTP;
+            }
+        }
     }
 
     return 0;

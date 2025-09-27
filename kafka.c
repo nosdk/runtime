@@ -151,6 +151,12 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
 
         fprintf(stderr, "config error: %s\n", errstr);
     }
+    if (rd_kafka_conf_set(
+            conf, "allow.auto.create.topics", "true", errstr, sizeof(errstr)) !=
+        RD_KAFKA_CONF_OK) {
+
+        fprintf(stderr, "config error: %s\n", errstr);
+    }
 
     consumer->rk =
         rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr, sizeof(errstr));
