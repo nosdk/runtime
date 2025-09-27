@@ -21,7 +21,7 @@ struct nosdk_config *load_config(char *path) {
     return config;
 }
 
-int config_main(struct nosdk_config *config) {
+int config_main(struct nosdk_config *config, bool is_yaml) {
     struct nosdk_process_mgr proc_mgr = {0};
     struct nosdk_io_mgr io_mgr = {0};
 
@@ -81,7 +81,8 @@ int config_main(struct nosdk_config *config) {
 
     nosdk_io_mgr_teardown(&io_mgr);
 
-    nosdk_config_destroy(config);
+    if (is_yaml)
+        nosdk_config_destroy(config);
 
     return 0;
 }
@@ -148,12 +149,24 @@ int main(int argc, char *argv[]) {
             printf("failed to parsed config file: %s\n", config_path);
             exit(1);
         }
-        return config_main(config);
+        return config_main(config, true);
     } else if (p_config.command != NULL) {
         struct nosdk_config config = {0};
         config.processes = &p_config;
         config.processes_count = 1;
-        return config_main(&config);
+        config_main(&config, false);
+        for (int i = 0; i < 16; i++) {
+            if (i < p_config.consume_count) {
+                free(p_config.consume[i].topic);
+            }
+            if (i < p_config.produce_count) {
+                free(p_config.produce[i].topic);
+            }
+        }
+        free(p_config.consume);
+        free(p_config.produce);
+        free(p_config.command);
+        return 0;
     }
 
     free(p_config.consume);

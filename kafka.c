@@ -450,10 +450,7 @@ void nosdk_kafka_sub_handler(struct nosdk_http_request *req) {
     }
     if (msg == NULL) {
         free(topic_name);
-        char *body = "null";
-        nosdk_http_respond(
-            req, HTTP_STATUS_NO_CONTENT, "application/json", body,
-            strlen(body));
+        nosdk_http_respond(req, HTTP_STATUS_OK, "application/json", "null", 4);
         return;
     }
 
