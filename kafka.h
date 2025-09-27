@@ -54,9 +54,7 @@ int nosdk_kafka_mgr_kafka_produce(char *topic);
 
 struct nosdk_kafka *nosdk_kafka_mgr_get_producer();
 
-void nosdk_kafka_sub_handler(struct nosdk_http_request *req);
-
-void nosdk_kafka_pub_handler(struct nosdk_http_request *req);
+void nosdk_kafka_handler(struct nosdk_http_request *req);
 
 void nosdk_kafka_mgr_teardown();
 

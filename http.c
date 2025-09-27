@@ -153,6 +153,19 @@ int nosdk_http_server_handle(
         return -1;
     }
 
+    for (int i = 0; i < server->num_handlers; i++) {
+        if (strcmp(server->handlers[i].prefix, handler.prefix) == 0) {
+            if (server->handlers[i].handler != handler.handler) {
+                printf(
+                    "handler function mismatch for prefix %s: %p != %p\n",
+                    handler.prefix, handler.handler,
+                    server->handlers[i].handler);
+                return -1;
+            }
+            return 0;
+        }
+    }
+
     server->handlers[server->num_handlers] = handler;
     server->num_handlers++;
 

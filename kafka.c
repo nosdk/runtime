@@ -427,7 +427,7 @@ void *nosdk_kafka_producer_thread(void *arg) {
 }
 
 char *get_topic_name(struct nosdk_http_request *req) {
-    char *topic_prefix = "/sub/";
+    char *topic_prefix = "/msg/";
     char *name = strdup(&req->path[strlen(topic_prefix)]);
     int len = strlen(name);
 
@@ -522,6 +522,17 @@ void nosdk_kafka_pub_handler(struct nosdk_http_request *req) {
     free(topic_name);
     free(body_data);
     nosdk_http_respond(req, HTTP_STATUS_OK, "text/plain", NULL, 0);
+}
+
+void nosdk_kafka_handler(struct nosdk_http_request *req) {
+    if (req->method == HTTP_METHOD_GET) {
+        nosdk_kafka_sub_handler(req);
+    } else if (req->method == HTTP_METHOD_POST) {
+        nosdk_kafka_pub_handler(req);
+    } else {
+        nosdk_http_respond(
+            req, HTTP_STATUS_INVALID_REQUEST, "text/plain", NULL, 0);
+    }
 }
 
 void nosdk_kafka_mgr_teardown() {

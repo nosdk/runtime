@@ -140,7 +140,7 @@ int create_table_jsonb(
 }
 
 char *get_table_name(struct nosdk_http_request *req) {
-    char *table_prefix = "/db/tables/";
+    char *table_prefix = "/db/";
     char *name = strdup(&req->path[strlen(table_prefix)]);
     int len = strlen(name);
 
@@ -158,7 +158,7 @@ char *get_request_path_id(struct nosdk_http_request *req) {
     int len = strlen(req->path);
 
     for (int i = 0; i < len; i++) {
-        if (path_elem == 4) {
+        if (path_elem == 3) {
             char *s = strdup(&req->path[i]);
             for (int j = 0; j < strlen(s); j++) {
                 if (s[j] == '?') {
