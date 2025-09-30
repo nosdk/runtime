@@ -14,14 +14,14 @@ ifeq ($(shell uname),Darwin)
 endif
 
 .PHONY: all test clean
-all: bin/nosdk
+all: bin/nosdk-run
 test: bin/test_json
 	./bin/test_json
 
 bin:
 	mkdir bin
 
-bin/nosdk: $(SOURCES) $(HEADERS) main.c | bin
+bin/nosdk-run: $(SOURCES) $(HEADERS) main.c | bin
 	cc -o $@ $(CFLAGS) $(SOURCES) main.c $(LIBS)
 
 

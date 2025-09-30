@@ -173,14 +173,17 @@ int nosdk_process_start(
     }
 
     if (pid == 0) {
-        close(stdout_pipe[0]);
-        close(stderr_pipe[0]);
 
-        dup2(stdout_pipe[1], STDOUT_FILENO);
-        dup2(stderr_pipe[1], STDERR_FILENO);
+        if (mgr->num_procs > 1) {
+            close(stdout_pipe[0]);
+            close(stderr_pipe[0]);
 
-        close(stdout_pipe[1]);
-        close(stderr_pipe[1]);
+            dup2(stdout_pipe[1], STDOUT_FILENO);
+            dup2(stderr_pipe[1], STDERR_FILENO);
+
+            close(stdout_pipe[1]);
+            close(stderr_pipe[1]);
+        }
 
         if (chdir(proc->ctx->root_dir) < 0) {
             perror("chdir");

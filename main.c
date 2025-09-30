@@ -99,14 +99,13 @@ int main(int argc, char *argv[]) {
     static struct option long_options[] = {
         {"produce", required_argument, NULL, 'p'},
         {"consume", required_argument, NULL, 'c'},
-        {"run", required_argument, NULL, 'r'},
         {"nproc", required_argument, NULL, 'n'},
         {"debug", no_argument, NULL, 'd'},
         {"config", required_argument, NULL, 'f'},
         {0, 0, 0, 0},
     };
 
-    while ((c = getopt_long(argc, argv, "p:c:r:n:f:d", long_options, NULL)) !=
+    while ((c = getopt_long(argc, argv, "p:c:n:f:d", long_options, NULL)) !=
            -1) {
         switch (c) {
         case 'c':
@@ -119,9 +118,6 @@ int main(int argc, char *argv[]) {
             p_config.produce[p_config.produce_count].interface = HTTP;
             p_config.produce_count++;
             break;
-        case 'r':
-            p_config.command = strdup(optarg);
-            break;
         case 'n':
             p_config.nproc = atoi(optarg);
             break;
@@ -131,6 +127,24 @@ int main(int argc, char *argv[]) {
         case 'f':
             config_path = strdup(optarg);
             break;
+        }
+    }
+
+    // collect remaining arguments as the command
+    if (optind < argc) {
+        size_t cmd_len = 0;
+        for (int i = optind; i < argc; i++) {
+            cmd_len += strlen(argv[i]) + 1;
+        }
+
+        p_config.command = malloc(cmd_len);
+        p_config.command[0] = '\0';
+
+        for (int i = optind; i < argc; i++) {
+            strcat(p_config.command, argv[i]);
+            if (i < argc - 1) {
+                strcat(p_config.command, " ");
+            }
         }
     }
 
