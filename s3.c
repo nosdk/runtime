@@ -60,10 +60,17 @@ void s3_init() {
     s3_ctx->client_config.region = aws_byte_cursor_from_c_str("us-east-1");
 
     // credentials
+    char *blob_user = getenv("BLOB_USER");
+    char *blob_password = getenv("BLOB_PASSWORD");
+
+    if (blob_user == NULL || blob_password == NULL) {
+        fprintf(stderr, "nosdk: missing blob credentials\n");
+        exit(1);
+    }
 
     struct aws_credentials_provider_static_options static_options = {
-        .access_key_id = aws_byte_cursor_from_c_str("minioadmin"),
-        .secret_access_key = aws_byte_cursor_from_c_str("minioadmin"),
+        .access_key_id = aws_byte_cursor_from_c_str(blob_user),
+        .secret_access_key = aws_byte_cursor_from_c_str(blob_password),
     };
 
     s3_ctx->credentials_provider =

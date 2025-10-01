@@ -51,9 +51,12 @@ PGconn *nosdk_pg_get_connection() {
                     return pg_pool.pool[i];
                 }
             } else {
-                PGconn *conn = PQconnectdb(
-                    "dbname=nosdk user=nosdk password=nosdk host=localhost "
-                    "port=15432");
+                char *dsn = getenv("POSTGRES_DSN");
+                if (dsn == NULL) {
+                    fprintf(stderr, "POSTGRES_DSN is not set\n");
+                    return NULL;
+                }
+                PGconn *conn = PQconnectdb(getenv("POSTGRES_DSN"));
                 if (PQstatus(conn) != CONNECTION_OK) {
                     fprintf(
                         stderr, "connection error: %s\n", PQerrorMessage(conn));
