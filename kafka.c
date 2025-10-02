@@ -126,10 +126,82 @@ void kafka_conf_must_set(
     }
 }
 
+int nosdk_kafka_ensure_topic_exists(const char *topic) {
+    rd_kafka_conf_t *conf = rd_kafka_conf_new();
+    char errstr[512];
+
+    kafka_conf_must_set(
+        conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS",
+        "0.0.0.0:19092");
+
+    // Only show warnings/errors if debug flag is set, otherwise be silent
+    if (rd_kafka_conf_set(
+            conf, "log_level", nosdk_debug_flag ? "5" : "0", errstr,
+            sizeof(errstr)) != RD_KAFKA_CONF_OK) {
+        fprintf(stderr, "config error: %s\n", errstr);
+    }
+
+    rd_kafka_t *admin_client =
+        rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
+    if (!admin_client) {
+        fprintf(stderr, "failed to create admin client: %s\n", errstr);
+        return 1;
+    }
+
+    rd_kafka_NewTopic_t *new_topic =
+        rd_kafka_NewTopic_new(topic, 1, 1, errstr, sizeof(errstr));
+    if (!new_topic) {
+        fprintf(stderr, "failed to create NewTopic: %s\n", errstr);
+        rd_kafka_destroy(admin_client);
+        return 1;
+    }
+
+    rd_kafka_AdminOptions_t *options =
+        rd_kafka_AdminOptions_new(admin_client, RD_KAFKA_ADMIN_OP_CREATETOPICS);
+    rd_kafka_AdminOptions_set_operation_timeout(options, 5000, errstr, sizeof(errstr));
+
+    rd_kafka_queue_t *queue = rd_kafka_queue_new(admin_client);
+    rd_kafka_CreateTopics(admin_client, &new_topic, 1, options, queue);
+
+    rd_kafka_event_t *event = rd_kafka_queue_poll(queue, 5000);
+    const rd_kafka_CreateTopics_result_t *result =
+        rd_kafka_event_CreateTopics_result(event);
+
+    size_t result_cnt;
+    const rd_kafka_topic_result_t **results =
+        rd_kafka_CreateTopics_result_topics(result, &result_cnt);
+
+    int ret = 0;
+    if (result_cnt > 0) {
+        rd_kafka_resp_err_t err = rd_kafka_topic_result_error(results[0]);
+        if (err != RD_KAFKA_RESP_ERR_NO_ERROR &&
+            err != RD_KAFKA_RESP_ERR_TOPIC_ALREADY_EXISTS) {
+            fprintf(
+                stderr, "failed to create topic %s: %s\n", topic,
+                rd_kafka_err2str(err));
+            ret = 1;
+        }
+    }
+
+    rd_kafka_event_destroy(event);
+    rd_kafka_queue_destroy(queue);
+    rd_kafka_AdminOptions_destroy(options);
+    rd_kafka_NewTopic_destroy(new_topic);
+    rd_kafka_destroy(admin_client);
+
+    return ret;
+}
+
 int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
     rd_kafka_conf_t *conf;
     rd_kafka_topic_partition_list_t *subscription;
     char errstr[512];
+
+    // Ensure topic exists before creating consumer
+    if (nosdk_kafka_ensure_topic_exists(consumer->topic) != 0) {
+        fprintf(stderr, "failed to ensure topic exists: %s\n", consumer->topic);
+        return 1;
+    }
 
     conf = rd_kafka_conf_new();
 
@@ -139,6 +211,13 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
     kafka_conf_must_set(
         conf, "group.id", "NOSDK_KAFKA_GROUP_ID", "nosdk-default-group");
 
+    // Only show warnings/errors if debug flag is set, otherwise be silent
+    if (rd_kafka_conf_set(
+            conf, "log_level", nosdk_debug_flag ? "5" : "0", errstr,
+            sizeof(errstr)) != RD_KAFKA_CONF_OK) {
+        fprintf(stderr, "config error: %s\n", errstr);
+    }
+
     if (rd_kafka_conf_set(
             conf, "auto.offset.reset", "earliest", errstr, sizeof(errstr)) !=
         RD_KAFKA_CONF_OK) {
@@ -147,12 +226,6 @@ int nosdk_kafka_consumer_init(struct nosdk_kafka *consumer) {
     }
     if (rd_kafka_conf_set(
             conf, "enable.auto.commit", "false", errstr, sizeof(errstr)) !=
-        RD_KAFKA_CONF_OK) {
-
-        fprintf(stderr, "config error: %s\n", errstr);
-    }
-    if (rd_kafka_conf_set(
-            conf, "allow.auto.create.topics", "true", errstr, sizeof(errstr)) !=
         RD_KAFKA_CONF_OK) {
 
         fprintf(stderr, "config error: %s\n", errstr);
@@ -200,6 +273,13 @@ int nosdk_kafka_producer_init(struct nosdk_kafka *producer) {
     kafka_conf_must_set(
         conf, "bootstrap.servers", "NOSDK_KAFKA_BOOTSTRAP_SERVERS",
         "0.0.0.0:19092");
+
+    // Only show warnings/errors if debug flag is set, otherwise be silent
+    if (rd_kafka_conf_set(
+            conf, "log_level", nosdk_debug_flag ? "5" : "0", errstr,
+            sizeof(errstr)) != RD_KAFKA_CONF_OK) {
+        fprintf(stderr, "config error: %s\n", errstr);
+    }
 
     producer->rk =
         rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
